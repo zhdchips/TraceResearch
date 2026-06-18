@@ -1,0 +1,27 @@
+schema_version: "1.0"
+
+extension:
+  id: "ai-eval-review"
+  name: "AI Eval Review"
+  version: "0.1.0"
+  description: "Add eval and review phases for AI application SDD."
+  author: "Wei"
+  repository: "https://github.com/zhdchips/speckit-ai-eval-review"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.7.2"
+
+provides:
+  commands:
+    - name: "speckit.ai-eval-review.eval"
+      file: "commands/eval.md"
+      description: "Evaluate AI application behavior, metrics, and bad cases after implementation."
+    - name: "speckit.ai-eval-review.review"
+      file: "commands/review.md"
+      description: "Review implementation against spec, plan, tasks, tests, and eval results."
+
+tags:
+  - "ai"
+  - "evaluation"
+  - "review"

@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "extensions": {
+    "git": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:9731aa8143a72fbebfdb440f155038ab42642517c2b2bdbbf67c8fdbe076ed79",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "agy": [
+          "speckit.git.feature",
+          "speckit.git.validate",
+          "speckit.git.remote",
+          "speckit.git.initialize",
+          "speckit.git.commit"
+        ],
+        "codex": [
+          "speckit.git.feature",
+          "speckit.git.validate",
+          "speckit.git.remote",
+          "speckit.git.initialize",
+          "speckit.git.commit"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-06-18T03:56:55.875331+00:00"
+    },
+    "ai-eval-review": {
+      "version": "0.1.0",
+      "source": "local",
+      "manifest_hash": "sha256:a0eaacde8fd9d9cc030dac555a1381989e34fb8855edbc9f7ecc26da5a327060",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "agy": [
+          "speckit.ai-eval-review.eval",
+          "speckit.ai-eval-review.review"
+        ],
+        "codex": [
+          "speckit.ai-eval-review.eval",
+          "speckit.ai-eval-review.review"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-06-18T03:59:12.028287+00:00"
+    }
+  }
+}

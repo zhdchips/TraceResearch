@@ -1,0 +1,48 @@
+schema_version: "1.0"
+
+workflow:
+  id: "ai-app-cycle"
+  name: "AI App SDD Cycle"
+  version: "0.1.0"
+  author: "Wei"
+  description: "Runs implement -> eval -> review -> human gate -> plan for AI application iterations."
+
+requires:
+  speckit_version: ">=0.7.2"
+
+inputs:
+  feature:
+    type: string
+    required: true
+    prompt: "Feature folder name, e.g. 001-deep-research-multi-agent"
+  replan_instruction:
+    type: string
+    default: "Update the technical plan based on review.md. Preserve valid design decisions and revise only the parts needed by the review decision."
+    prompt: "Instruction to pass to the plan step after review"
+
+steps:
+  - id: implement
+    command: speckit.implement
+    input:
+      args: "{{ inputs.feature }}"
+
+  - id: eval
+    command: speckit.eval
+    input:
+      args: "{{ inputs.feature }}"
+
+  - id: review
+    command: speckit.review
+    input:
+      args: "{{ inputs.feature }}"
+
+  - id: review-gate
+    type: gate
+    message: "Review is complete. Approve returning to plan. Reject/abort if review.md says decision is complete or pause."
+    options: [approve, reject]
+    on_reject: abort
+
+  - id: replan
+    command: speckit.plan
+    input:
+      args: "{{ inputs.replan_instruction }} Feature: {{ inputs.feature }}. Read specs/{{ inputs.feature }}/review.md and update plan.md accordingly."
