@@ -212,17 +212,17 @@
 
 **Independent Test**: README content test 通过，manual review 可按 README 执行 fixture demo 与 unconfigured/live web path。
 
-- [ ] T031 [P1] [US4] 创建 root README demo guide in `README.md`
+- [X] T031 [P1] [US4] 创建 root README demo guide in `README.md`
   - DoD: README 包含 project positioning、architecture overview、fixture demo、live web demo、secret handling、eval/review workflow、artifact inspection、limitations、interview screen-share path。
   - Tests: `python3 -m pytest tests/unit/test_readme_demo_readiness.py`
   - Related files: `README.md`, `tests/unit/test_readme_demo_readiness.py`, `specs/002-live-provider-demo-readiness/contracts/demo-readiness-contract.md`
 
-- [ ] T032 [P1] [US4] 更新 `.env.example` documentation alignment in `.env.example`
+- [X] T032 [P1] [US4] 更新 `.env.example` documentation alignment in `.env.example`
   - DoD: `.env.example` 与 README/contract 中 env keys 一致；无真实 secret；包括 comments 说明 live smoke manual only。
   - Tests: `python3 -m pytest tests/unit/test_readme_demo_readiness.py tests/unit/test_config.py`
   - Related files: `.env.example`, `README.md`, `tests/unit/test_readme_demo_readiness.py`
 
-- [ ] T033 [P1] [US4] 写入 live smoke manual notes in `specs/002-live-provider-demo-readiness/eval.md`
+- [X] T033 [P1] [US4] 写入 live smoke manual notes in `specs/002-live-provider-demo-readiness/eval.md`
   - DoD: `eval.md` 说明 fixture eval 是 required gate；live smoke 是 manual/non-CI；包含 configured success 命令、unconfigured failure 命令、记录结果/skip reason 的格式。
   - Tests: Markdown review；后续 T039/T040 执行命令并更新 result。
   - Related files: `specs/002-live-provider-demo-readiness/eval.md`, `README.md`, `specs/002-live-provider-demo-readiness/quickstart.md`
