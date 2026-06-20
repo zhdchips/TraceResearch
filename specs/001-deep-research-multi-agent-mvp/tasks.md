@@ -144,15 +144,17 @@ TASK LINE: - [ ] T001 [P] [US1] Description with file path
 
 ### Tests for User Story 1
 
-- [ ] T023 [P] [US1] P0: 编写 CLI run integration test in `tests/integration/test_run_fixture_case.py`
+- [X] T023 [P] [US1] P0: 编写 CLI run integration test in `tests/integration/test_run_fixture_case.py`
   - DoD: 测试执行 fixture run 后生成 required artifacts，并校验 `final_report.md` 与 `report.json` 存在。
   - Tests: `pytest tests/integration/test_run_fixture_case.py`
   - Related files: `tests/integration/test_run_fixture_case.py`, `specs/001-deep-research-multi-agent-mvp/contracts/cli-contract.md`
+  - Note: failure is expected until T025-T032 implement the Planner/Researcher/Writer/Verifier/Critic/Harness/CLI run chain.
 
-- [ ] T024 [P] [US1] P0: 编写 report evidence linking test in `tests/integration/test_report_grounding.py`
+- [X] T024 [P] [US1] P0: 编写 report evidence linking test in `tests/integration/test_report_grounding.py`
   - DoD: 测试每个 key claim 至少有一个 verified evidence ID，unsupported claim 不进入 final report。
   - Tests: `pytest tests/integration/test_report_grounding.py`
   - Related files: `tests/integration/test_report_grounding.py`, `specs/001-deep-research-multi-agent-mvp/contracts/artifact-contract.md`
+  - Note: failure is expected until T025-T032 implement the Planner/Researcher/Writer/Verifier/Critic/Harness/CLI run chain.
 
 ### Implementation for User Story 1
 
