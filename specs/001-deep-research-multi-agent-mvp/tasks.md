@@ -258,34 +258,34 @@ TASK LINE: - [ ] T001 [P] [US1] Description with file path
 
 ### Tests for User Story 4
 
-- [ ] T040 [P] [US4] P1: 编写 eval metrics tests in `tests/eval/test_metrics.py`
+- [X] T040 [P] [US4] P1: 编写 eval metrics tests in `tests/eval/test_metrics.py`
   - DoD: 覆盖 `planner_coverage`、`perspective_diversity`、`source_relevance`、`source_authority`、`citation_completeness`、`faithfulness`、`unsupported_claim_count`、`critical_hallucination_count`、`case_pass_rate`。
   - Tests: `pytest tests/eval/test_metrics.py`
   - Related files: `tests/eval/test_metrics.py`, `traceresearch/eval/metrics.py`
 
-- [ ] T041 [P] [US4] P1: 编写 eval runner integration test in `tests/eval/test_eval_runner.py`
+- [X] T041 [P] [US4] P1: 编写 eval runner integration test in `tests/eval/test_eval_runner.py`
   - DoD: 测试 5 个 seed cases 都被执行，且结果写入 `eval/results/`。
   - Tests: `pytest tests/eval/test_eval_runner.py`
   - Related files: `tests/eval/test_eval_runner.py`, `eval/cases/`, `eval/fixtures/sources/`
 
 ### Implementation for User Story 4
 
-- [ ] T042 [US4] P1: 实现 metrics calculator in `traceresearch/eval/metrics.py`
+- [X] T042 [US4] P1: 实现 metrics calculator in `traceresearch/eval/metrics.py`
   - DoD: 计算 plan/spec 要求的 9 个 metrics，并输出 numeric/pass-fail summary。
   - Tests: 单测覆盖 passing、failing、missing evidence、unsupported claims。
   - Related files: `traceresearch/eval/metrics.py`, `tests/eval/test_metrics.py`
 
-- [ ] T043 [US4] P1: 实现 eval runner in `traceresearch/eval/runner.py`
+- [X] T043 [US4] P1: 实现 eval runner in `traceresearch/eval/runner.py`
   - DoD: 加载 `eval/cases/*.yml`，逐 case 调用 Harness，写入 `eval/results/<eval_run_id>-summary.json` 和 bad-case notes。
   - Tests: Integration test 覆盖 5 seed cases、failed case notes、suggested_next_phase。
   - Related files: `traceresearch/eval/runner.py`, `tests/eval/test_eval_runner.py`
 
-- [ ] T044 [US4] P1: 实现 CLI eval command in `traceresearch/cli.py`
+- [X] T044 [US4] P1: 实现 CLI eval command in `traceresearch/cli.py`
   - DoD: `traceresearch eval --cases-dir eval/cases --source-provider fixture --results-dir eval/results` 可运行，并打印 pass/fail summary。
   - Tests: CLI runner test 覆盖 eval command output 和 result file path。
   - Related files: `traceresearch/cli.py`, `tests/eval/test_cli_eval.py`
 
-- [ ] T045 [US4] P1: 创建 eval workflow artifact in `specs/001-deep-research-multi-agent-mvp/eval.md`
+- [X] T045 [US4] P1: 创建 eval workflow artifact in `specs/001-deep-research-multi-agent-mvp/eval.md`
   - DoD: `eval.md` 包含 Scope、Metrics、Cases、Commands、Latest Result、Bad Cases、Next Review Focus，并引用 `$speckit-ai-eval-review-eval`。
   - Tests: Markdown check 确认 required headings 和真实 skill 名存在。
   - Related files: `specs/001-deep-research-multi-agent-mvp/eval.md`, `.agents/skills/speckit-ai-eval-review-eval/SKILL.md`
