@@ -142,27 +142,27 @@
 
 **Independent Test**: 使用 mocked Exa/provider 执行 web run，验证 `final_report.md`、`evidence.jsonl`、`trace.jsonl`、`report.json` 存在，且 key claims 有 evidence IDs。
 
-- [ ] T021 [P0] [US1] 添加 provider-aware harness entrypoint in `traceresearch/harness/orchestrator.py`
+- [X] T021 [P0] [US1] 添加 provider-aware harness entrypoint in `traceresearch/harness/orchestrator.py`
   - DoD: 新增可接收 selected `SourceDiscoveryProvider` 的 run path；保留 `run_fixture` wrapper；不改变 Agent order。
   - Tests: `python3 -m pytest tests/integration/test_run_web_provider.py tests/integration/test_run_fixture_case.py`
   - Related files: `traceresearch/harness/orchestrator.py`, `tests/integration/test_run_web_provider.py`, `tests/integration/test_run_fixture_case.py`
 
-- [ ] T022 [P0] [US1] 更新 Researcher/provider metadata handling in `traceresearch/agents/researcher.py`
+- [X] T022 [P0] [US1] 更新 Researcher/provider metadata handling in `traceresearch/agents/researcher.py`
   - DoD: live `SourceDocument.metadata` 可生成 authority/relevance、summary、key_points、supported_claims、limitations；fixture metadata 不回归。
   - Tests: `python3 -m pytest tests/integration/test_run_web_provider.py tests/unit/test_fixture_provider.py`
   - Related files: `traceresearch/agents/researcher.py`, `traceresearch/source_discovery/exa_provider.py`, `tests/integration/test_run_web_provider.py`
 
-- [ ] T023 [P0] [US1] 增强 Trace provider tool naming in `traceresearch/harness/orchestrator.py`
+- [X] T023 [P0] [US1] 增强 Trace provider tool naming in `traceresearch/harness/orchestrator.py`
   - DoD: Trace 对 fixture 使用 `fixture.search`，对 live web 使用 `exa.search` 或 `web_search`；output_summary 包含 result count/evidence IDs；latency 字段保留安全值。
   - Tests: `python3 -m pytest tests/integration/test_run_web_provider.py tests/integration/test_artifact_inspection.py`
   - Related files: `traceresearch/harness/orchestrator.py`, `traceresearch/trace/models.py`, `tests/integration/test_run_web_provider.py`
 
-- [ ] T024 [P0] [US1] 接通 CLI `--source-provider web` configured success path in `traceresearch/cli.py`
+- [X] T024 [P0] [US1] 接通 CLI `--source-provider web` configured success path in `traceresearch/cli.py`
   - DoD: CLI 使用 provider factory；configured web path 调 harness 并打印 `run_id/status/artifact_dir`；fixture path 保持；unsupported provider 明确失败。
   - Tests: `python3 -m pytest tests/integration/test_cli_web_provider.py tests/integration/test_run_web_provider.py`
   - Related files: `traceresearch/cli.py`, `traceresearch/source_discovery/factory.py`, `traceresearch/harness/orchestrator.py`, `tests/integration/test_cli_web_provider.py`
 
-- [ ] T025 [P0] [US1] 验证 mocked web artifacts grounding in `tests/integration/test_run_web_provider.py`
+- [X] T025 [P0] [US1] 验证 mocked web artifacts grounding in `tests/integration/test_run_web_provider.py`
   - DoD: 测试断言 live/mock final report key claims 有 `[EV-...]`；evidence rows 包含 live title/url/retrieved_at；trace 有 web provider step。
   - Tests: `python3 -m pytest tests/integration/test_run_web_provider.py`
   - Related files: `tests/integration/test_run_web_provider.py`, `runs/`, `traceresearch/harness/orchestrator.py`

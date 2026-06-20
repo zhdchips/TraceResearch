@@ -21,6 +21,7 @@ from traceresearch.evidence.models import (
 )
 from traceresearch.evidence.store import EvidenceStore
 from traceresearch.harness.artifacts import RunArtifacts
+from traceresearch.source_discovery.base import SourceDiscoveryProvider
 from traceresearch.source_discovery.fixture_provider import FixtureSourceProvider
 from traceresearch.trace.models import AgentRole, EventType, TraceEvent, TraceStatus
 from traceresearch.trace.writer import TraceWriter
@@ -50,6 +51,22 @@ class ResearchHarness:
         self.critic = critic or Critic()
         self.writer = writer or Writer()
 
+    def run(
+        self,
+        *,
+        query: str,
+        source_provider: SourceDiscoveryProvider,
+        output_dir: str | Path,
+    ) -> RunResult:
+        return self._run_with_provider(
+            query=query,
+            provider=source_provider,
+            output_dir=output_dir,
+            run_id=_new_run_id(None),
+            eval_case=None,
+            case_id=None,
+        )
+
     def run_fixture(
         self,
         *,
@@ -57,18 +74,37 @@ class ResearchHarness:
         case_id: str | None,
         output_dir: str | Path,
     ) -> RunResult:
-        run_id = _new_run_id(case_id)
+        provider = FixtureSourceProvider(case_id=case_id)
+        eval_case = provider.load_eval_case(case_id) if case_id else None
+        return self._run_with_provider(
+            query=query,
+            provider=provider,
+            output_dir=output_dir,
+            run_id=_new_run_id(case_id),
+            eval_case=eval_case,
+            case_id=case_id,
+        )
+
+    def _run_with_provider(
+        self,
+        *,
+        query: str,
+        provider: SourceDiscoveryProvider,
+        output_dir: str | Path,
+        run_id: str,
+        eval_case,
+        case_id: str | None,
+    ) -> RunResult:
         artifacts = RunArtifacts.create(output_dir, run_id)
         trace = _TraceRecorder(run_id=run_id, writer=TraceWriter(artifacts.trace))
         evidence_store = EvidenceStore(artifacts.evidence)
-        provider = FixtureSourceProvider(case_id=case_id)
-        eval_case = provider.load_eval_case(case_id) if case_id else None
+        provider_tool_name = _provider_tool_name(provider)
 
         trace.record(
             AgentRole.HARNESS,
             EventType.START,
             "Harness run started",
-            f"case_id={case_id or 'none'}",
+            f"case_id={case_id or 'none'}; source_provider={provider.provider_name}",
         )
 
         trace.record(AgentRole.PLANNER, EventType.START, query, "planning")
@@ -128,15 +164,17 @@ class ResearchHarness:
                 AgentRole.RESEARCHER,
                 EventType.TOOL_RESULT,
                 task.query,
+                f"provider_step={provider_tool_name}; "
+                f"result_count={len(task_evidence)}; "
                 "evidence_ids="
                 + ",".join(item.evidence_id for item in task_evidence),
                 task_id=task.research_task_id,
-                tool_name="fixture.search",
+                tool_name=provider_tool_name,
             )
         trace.record(
             AgentRole.RESEARCHER,
             EventType.FINISH,
-            "fixture provider results",
+            f"{provider.provider_name} provider results",
             f"stored {len(stored_evidence)} evidence candidates",
         )
 
@@ -297,6 +335,20 @@ class _TraceRecorder:
 def _new_run_id(case_id: str | None) -> str:
     prefix = case_id or "run"
     return f"{prefix}-{uuid4().hex[:8]}"
+
+
+def _provider_tool_name(provider: SourceDiscoveryProvider) -> str:
+    explicit_tool_name = getattr(provider, "tool_name", None)
+    if explicit_tool_name:
+        return str(explicit_tool_name)
+    if provider.provider_name == "fixture":
+        return "fixture.search"
+    provider_display_name = getattr(provider, "provider_display_name", None)
+    if provider_display_name == "exa":
+        return "exa.search"
+    if provider.provider_name == "web":
+        return "web_search"
+    return f"{provider.provider_name}.search"
 
 
 def _write_json(path: Path, payload: object) -> None:
