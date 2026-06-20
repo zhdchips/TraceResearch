@@ -205,19 +205,19 @@ TASK LINE: - [ ] T001 [P] [US1] Description with file path
 
 ### Tests for User Story 2
 
-- [ ] T033 [P] [US2] P0: 编写 ambiguous query tests in `tests/integration/test_ambiguous_query.py`
+- [X] T033 [P] [US2] P0: 编写 ambiguous query tests in `tests/integration/test_ambiguous_query.py`
   - DoD: 覆盖缺 research object、缺 time range、缺 output goal、over-broad query 四类输入。
   - Tests: `pytest tests/integration/test_ambiguous_query.py`
   - Related files: `tests/integration/test_ambiguous_query.py`, `specs/001-deep-research-multi-agent-mvp/spec.md`
 
 ### Implementation for User Story 2
 
-- [ ] T034 [US2] P0: 实现 Planner ambiguity policy in `traceresearch/agents/planner.py`
+- [X] T034 [US2] P0: 实现 Planner ambiguity policy in `traceresearch/agents/planner.py`
   - DoD: Planner 能返回 `open_clarifications` 或 explicit `assumptions`，并避免对无法界定的问题生成确定性 research tasks。
   - Tests: 单测覆盖 clarification 和 assumption 两种路径。
   - Related files: `traceresearch/agents/planner.py`, `tests/unit/test_planner_ambiguity.py`
 
-- [ ] T035 [US2] P0: 实现 needs_clarification run handling in `traceresearch/harness/orchestrator.py`
+- [X] T035 [US2] P0: 实现 needs_clarification run handling in `traceresearch/harness/orchestrator.py`
   - DoD: 当 Planner 判定无法安全继续时，Harness 写 `research_brief.json`、`trace.jsonl`，run status 为 `needs_clarification`，不调用 Researcher/Writer。
   - Tests: Integration test 断言无 evidence/report final artifacts，Trace status 正确。
   - Related files: `traceresearch/harness/orchestrator.py`, `tests/integration/test_ambiguous_query.py`

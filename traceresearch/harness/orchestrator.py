@@ -74,15 +74,34 @@ class ResearchHarness:
         trace.record(AgentRole.PLANNER, EventType.START, query, "planning")
         brief = self.planner.plan(run_id=run_id, query=query, eval_case=eval_case)
         _write_json(artifacts.research_brief, brief.model_dump(mode="json"))
-        _write_json(
-            artifacts.research_tasks,
-            [task.model_dump(mode="json") for task in brief.research_tasks],
-        )
         trace.record(
             AgentRole.PLANNER,
             EventType.FINISH,
             "research question",
             f"created {len(brief.research_tasks)} research tasks",
+            status=TraceStatus.NEEDS_CLARIFICATION
+            if brief.open_clarifications
+            else TraceStatus.SUCCESS,
+        )
+
+        if brief.open_clarifications:
+            trace.record(
+                AgentRole.HARNESS,
+                EventType.FINISH,
+                "needs clarification",
+                "research stopped before source discovery",
+                status=TraceStatus.NEEDS_CLARIFICATION,
+            )
+            return RunResult(
+                run_id=run_id,
+                status=ResearchRunStatus.NEEDS_CLARIFICATION,
+                artifact_dir=artifacts.run_dir,
+                final_report_path=None,
+            )
+
+        _write_json(
+            artifacts.research_tasks,
+            [task.model_dump(mode="json") for task in brief.research_tasks],
         )
 
         trace.record(
