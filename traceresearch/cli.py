@@ -7,6 +7,7 @@ import typer
 from traceresearch.eval.runner import EvalRunner
 from traceresearch.harness.orchestrator import ResearchHarness
 from traceresearch.source_discovery.base import ProviderNotConfiguredError
+from traceresearch.source_discovery.factory import build_source_provider
 
 app = typer.Typer(help="TraceResearch Deep Research CLI.")
 
@@ -42,6 +43,7 @@ def run(
         typer.echo(f"error_message={error}")
         raise typer.Exit(code=1)
 
+    build_source_provider(source_provider="fixture", case_id=case_id)
     result = ResearchHarness().run_fixture(
         query=query,
         case_id=case_id,

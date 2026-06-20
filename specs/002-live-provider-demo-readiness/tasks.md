@@ -112,22 +112,22 @@
 
 **Independent Test**: 未配置 `EXA_API_KEY` 时运行 `python3 -m pytest` 和 fixture eval，仍保持全绿与 5/5 pass。
 
-- [ ] T017 [P] [P0] [US2] 编写 fixture regression tests in `tests/integration/test_fixture_regression_after_web.py`
+- [X] T017 [P] [P0] [US2] 编写 fixture regression tests in `tests/integration/test_fixture_regression_after_web.py`
   - DoD: 覆盖 fixture run 在 live env 缺失/存在时都使用 fixture provider；fixture artifacts 不含 web provider source IDs；case_id fixture path 不受 web config 影响。
   - Tests: `python3 -m pytest tests/integration/test_fixture_regression_after_web.py`，实现前允许失败。
   - Related files: `tests/integration/test_fixture_regression_after_web.py`, `traceresearch/cli.py`, `traceresearch/harness/orchestrator.py`, `traceresearch/source_discovery/factory.py`
 
-- [ ] T018 [P0] [US2] 确保 fixture CLI path 继续通过 provider factory in `traceresearch/cli.py`
+- [X] T018 [P0] [US2] 确保 fixture CLI path 继续通过 provider factory in `traceresearch/cli.py`
   - DoD: `traceresearch run --source-provider fixture` 仍可运行；`case_id` fixture eval path 保持不变；web env 不影响 fixture behavior。
   - Tests: `python3 -m pytest tests/integration/test_fixture_regression_after_web.py tests/integration/test_run_fixture_case.py`
   - Related files: `traceresearch/cli.py`, `traceresearch/source_discovery/factory.py`, `tests/integration/test_fixture_regression_after_web.py`
 
-- [ ] T019 [P0] [US2] 保持 fixture eval runner 强制使用 FixtureSourceProvider in `traceresearch/eval/runner.py`
+- [X] T019 [P0] [US2] 保持 fixture eval runner 强制使用 FixtureSourceProvider in `traceresearch/eval/runner.py`
   - DoD: `traceresearch eval --source-provider fixture` 不读取 live provider key；5 seed cases 仍 deterministic。
   - Tests: `python3 -m pytest tests/eval/test_eval_runner.py tests/eval/test_metrics.py`
   - Related files: `traceresearch/eval/runner.py`, `tests/eval/test_eval_runner.py`, `eval/cases/`, `eval/fixtures/sources/`
 
-- [ ] T020 [P0] [US2] 运行 full fixture regression suite in `tests/`
+- [X] T020 [P0] [US2] 运行 full fixture regression suite in `tests/`
   - DoD: 当前 71 个测试继续全绿；若测试数增加，全部通过。
   - Tests: `python3 -m pytest`
   - Related files: `tests/`, `pyproject.toml`, `traceresearch/`
