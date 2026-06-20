@@ -72,32 +72,32 @@
 
 **Purpose**: 实现所有 user stories 共用的 config、error、factory 和 Exa provider 基础能力。完成后 user story work 可以独立推进。
 
-- [ ] T011 [P0] 实现 `LiveProviderConfig` env loader in `traceresearch/config.py`
+- [X] T011 [P0] 实现 `LiveProviderConfig` env loader in `traceresearch/config.py`
   - DoD: 从环境变量读取 provider、API key、timeout、max results；支持 defaults；missing key 映射为 not configured；repr/error redacts secret。
   - Tests: `python3 -m pytest tests/unit/test_config.py`
   - Related files: `traceresearch/config.py`, `tests/unit/test_config.py`
 
-- [ ] T012 [P0] 扩展 provider error taxonomy in `traceresearch/source_discovery/base.py`
+- [X] T012 [P0] 扩展 provider error taxonomy in `traceresearch/source_discovery/base.py`
   - DoD: 定义/支持 `provider_timeout`、`provider_error`、`provider_rate_limited`、`provider_no_results`、`source_normalization_error` 等安全错误类型，不破坏既有 `ProviderNotConfiguredError`。
   - Tests: `python3 -m pytest tests/unit/test_web_error_mapping.py tests/unit/test_web_stub.py`
   - Related files: `traceresearch/source_discovery/base.py`, `traceresearch/source_discovery/web_stub.py`, `tests/unit/test_web_error_mapping.py`, `tests/unit/test_web_stub.py`
 
-- [ ] T013 [P0] 实现 provider factory in `traceresearch/source_discovery/factory.py`
+- [X] T013 [P0] 实现 provider factory in `traceresearch/source_discovery/factory.py`
   - DoD: `fixture` 返回 `FixtureSourceProvider`；`web` 根据 config 返回 `ExaSearchProvider` 或明确 `ProviderNotConfiguredError`；任何 web failure 不 fallback fixture。
   - Tests: `python3 -m pytest tests/unit/test_provider_factory.py`
   - Related files: `traceresearch/source_discovery/factory.py`, `traceresearch/source_discovery/fixture_provider.py`, `traceresearch/source_discovery/exa_provider.py`, `tests/unit/test_provider_factory.py`
 
-- [ ] T014 [P0] 实现 ExaSearchProvider HTTP/search/fetch skeleton in `traceresearch/source_discovery/exa_provider.py`
+- [X] T014 [P0] 实现 ExaSearchProvider HTTP/search/fetch skeleton in `traceresearch/source_discovery/exa_provider.py`
   - DoD: 使用 stdlib HTTP client 调用 Exa `/search`；支持 timeout/max results；`fetch` 可返回 search 缓存的 normalized document；不引入 SDK dependency。
   - Tests: `python3 -m pytest tests/unit/test_exa_provider.py`
   - Related files: `traceresearch/source_discovery/exa_provider.py`, `tests/unit/test_exa_provider.py`
 
-- [ ] T015 [P0] 实现 Exa response normalization in `traceresearch/source_discovery/exa_provider.py`
+- [X] T015 [P0] 实现 Exa response normalization in `traceresearch/source_discovery/exa_provider.py`
   - DoD: Exa `results[]` 映射到 `SourceResult` / `SourceDocument`；source_id 稳定；snippet 使用 highlights/summary/text；source_type/publisher/relevance/authority metadata 可供 Researcher 使用。
   - Tests: `python3 -m pytest tests/unit/test_exa_provider.py`
   - Related files: `traceresearch/source_discovery/exa_provider.py`, `traceresearch/evidence/models.py`, `tests/unit/test_exa_provider.py`
 
-- [ ] T016 [P0] 实现 provider error mapping in `traceresearch/source_discovery/exa_provider.py`
+- [X] T016 [P0] 实现 provider error mapping in `traceresearch/source_discovery/exa_provider.py`
   - DoD: timeout、401/403、429、5xx、empty results、bad schema 均映射到安全错误；error/Trace payload 不包含 API key。
   - Tests: `python3 -m pytest tests/unit/test_web_error_mapping.py tests/unit/test_exa_provider.py`
   - Related files: `traceresearch/source_discovery/exa_provider.py`, `traceresearch/source_discovery/base.py`, `tests/unit/test_web_error_mapping.py`
