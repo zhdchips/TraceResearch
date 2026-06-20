@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import re
 
 from pydantic import HttpUrl
 
@@ -45,6 +46,13 @@ class ProviderError(SourceDiscoveryError):
         self.latency_ms = latency_ms
         self.message = _redact_secret_markers(message)
         super().__init__(self.message)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}(code={self.code!r}, "
+            f"provider_name={self.provider_name!r}, operation={self.operation!r}, "
+            f"message={self.message!r})"
+        )
 
     def to_trace_error(self) -> ErrorInfo:
         details = [self.message]
@@ -175,4 +183,6 @@ def _redact_secret_markers(message: str) -> str:
     for marker in ("exa_live_", "test-exa-secret", "exa_live_secret", "x-api-key"):
         if marker in redacted:
             redacted = redacted.replace(marker, "[redacted]")
+    redacted = re.sub(r"exa_live_[A-Za-z0-9_:-]+", "[redacted]", redacted)
+    redacted = re.sub(r"sk-[A-Za-z0-9_-]+", "[redacted]", redacted)
     return redacted

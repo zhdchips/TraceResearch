@@ -177,27 +177,27 @@
 
 **Independent Test**: 不配置 `EXA_API_KEY` 运行 web provider path，CLI 输出 `provider_not_configured`，Trace/error 安全，且未产生 fixture evidence。
 
-- [ ] T026 [P] [P1] [US3] 编写 unconfigured web failure integration tests in `tests/integration/test_web_unconfigured_failure.py`
+- [X] T026 [P] [P1] [US3] 编写 unconfigured web failure integration tests in `tests/integration/test_web_unconfigured_failure.py`
   - DoD: 覆盖 missing/blank `EXA_API_KEY`，CLI 输出 `status=failed`、`error_type=provider_not_configured`，不创建 fixture evidence，不 fallback。
   - Tests: `python3 -m pytest tests/integration/test_web_unconfigured_failure.py`，实现前允许失败。
   - Related files: `tests/integration/test_web_unconfigured_failure.py`, `traceresearch/cli.py`, `traceresearch/source_discovery/factory.py`
 
-- [ ] T027 [P] [P1] [US3] 编写 no-results and provider-error integration tests in `tests/integration/test_web_provider_failures.py`
+- [X] T027 [P] [P1] [US3] 编写 no-results and provider-error integration tests in `tests/integration/test_web_provider_failures.py`
   - DoD: 使用 mocked Exa/provider 覆盖 timeout、rate limit、5xx、empty results；断言 safe error/no-evidence reason 可观察，report 不含 unsupported deterministic conclusion。
   - Tests: `python3 -m pytest tests/integration/test_web_provider_failures.py`，实现前允许失败。
   - Related files: `tests/integration/test_web_provider_failures.py`, `traceresearch/source_discovery/exa_provider.py`, `traceresearch/harness/orchestrator.py`
 
-- [ ] T028 [P1] [US3] 实现 unconfigured web failed-run handling in `traceresearch/cli.py`
+- [X] T028 [P1] [US3] 实现 unconfigured web failed-run handling in `traceresearch/cli.py`
   - DoD: missing key path 输出 clear status/error；必要时写 minimal failed run Trace；不调用 fixture provider；不吞异常。
   - Tests: `python3 -m pytest tests/integration/test_web_unconfigured_failure.py tests/unit/test_provider_factory.py`
   - Related files: `traceresearch/cli.py`, `traceresearch/source_discovery/factory.py`, `traceresearch/source_discovery/web_stub.py`, `tests/integration/test_web_unconfigured_failure.py`
 
-- [ ] T029 [P1] [US3] 实现 provider no-results/error safe artifacts in `traceresearch/harness/orchestrator.py`
+- [X] T029 [P1] [US3] 实现 provider no-results/error safe artifacts in `traceresearch/harness/orchestrator.py`
   - DoD: provider no-results/error 时 Trace 记录原因；run 不误标 completed；若生成 report，只能包含 limitation/follow-up，不包含 unsupported conclusion。
   - Tests: `python3 -m pytest tests/integration/test_web_provider_failures.py tests/unit/test_web_error_mapping.py`
   - Related files: `traceresearch/harness/orchestrator.py`, `traceresearch/source_discovery/exa_provider.py`, `tests/integration/test_web_provider_failures.py`
 
-- [ ] T030 [P1] [US3] 增加 secret redaction regression assertions in `tests/unit/test_web_error_mapping.py`
+- [X] T030 [P1] [US3] 增加 secret redaction regression assertions in `tests/unit/test_web_error_mapping.py`
   - DoD: 测试确认 fake API key 不出现在 CLI output、Trace error message、exception repr、report artifacts。
   - Tests: `python3 -m pytest tests/unit/test_web_error_mapping.py tests/integration/test_web_unconfigured_failure.py`
   - Related files: `tests/unit/test_web_error_mapping.py`, `tests/integration/test_web_unconfigured_failure.py`, `traceresearch/config.py`, `traceresearch/source_discovery/exa_provider.py`

@@ -21,9 +21,9 @@ from traceresearch.evidence.models import (
 )
 from traceresearch.evidence.store import EvidenceStore
 from traceresearch.harness.artifacts import RunArtifacts
-from traceresearch.source_discovery.base import SourceDiscoveryProvider
+from traceresearch.source_discovery.base import SourceDiscoveryError, SourceDiscoveryProvider
 from traceresearch.source_discovery.fixture_provider import FixtureSourceProvider
-from traceresearch.trace.models import AgentRole, EventType, TraceEvent, TraceStatus
+from traceresearch.trace.models import AgentRole, ErrorInfo, EventType, TraceEvent, TraceStatus
 from traceresearch.trace.writer import TraceWriter
 
 
@@ -149,12 +149,38 @@ class ResearchHarness:
         stored_evidence: list[Evidence] = []
         sequence = 1
         for task in brief.research_tasks:
-            task_evidence = self.researcher.research(
-                run_id=run_id,
-                task=task,
-                provider=provider,
-                start_index=sequence,
-            )
+            try:
+                task_evidence = self.researcher.research(
+                    run_id=run_id,
+                    task=task,
+                    provider=provider,
+                    start_index=sequence,
+                )
+            except SourceDiscoveryError as error:
+                trace.record(
+                    AgentRole.RESEARCHER,
+                    EventType.ERROR,
+                    task.query,
+                    f"provider_step={provider_tool_name}; failed with {error.code}",
+                    task_id=task.research_task_id,
+                    tool_name=provider_tool_name,
+                    status=TraceStatus.FAILED,
+                    error=_trace_error(error),
+                )
+                trace.record(
+                    AgentRole.HARNESS,
+                    EventType.FINISH,
+                    "failed run",
+                    f"status=failed; error_type={error.code}",
+                    status=TraceStatus.FAILED,
+                    error=_trace_error(error),
+                )
+                return RunResult(
+                    run_id=run_id,
+                    status=ResearchRunStatus.FAILED,
+                    artifact_dir=artifacts.run_dir,
+                    final_report_path=None,
+                )
             sequence += len(task_evidence)
             for item in task_evidence:
                 stored = evidence_store.add(item)
@@ -314,6 +340,7 @@ class _TraceRecorder:
         task_id: str | None = None,
         tool_name: str | None = None,
         status: TraceStatus = TraceStatus.SUCCESS,
+        error: ErrorInfo | None = None,
     ) -> None:
         event = TraceEvent(
             trace_id=f"TR-{self.run_id}-{self.sequence:03d}",
@@ -326,6 +353,7 @@ class _TraceRecorder:
             output_summary=output_summary,
             status=status,
             latency_ms=0,
+            error=error,
             created_at=datetime.now(timezone.utc),
         )
         self.writer.append(event)
@@ -349,6 +377,13 @@ def _provider_tool_name(provider: SourceDiscoveryProvider) -> str:
     if provider.provider_name == "web":
         return "web_search"
     return f"{provider.provider_name}.search"
+
+
+def _trace_error(error: SourceDiscoveryError) -> ErrorInfo:
+    to_trace_error = getattr(error, "to_trace_error", None)
+    if callable(to_trace_error):
+        return to_trace_error()
+    return ErrorInfo(type=error.code, message=str(error))
 
 
 def _write_json(path: Path, payload: object) -> None:

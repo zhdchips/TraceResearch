@@ -44,21 +44,29 @@ def run(
         typer.echo(f"error_message={error}")
         raise typer.Exit(code=1)
 
-    if source_provider == "fixture":
-        result = ResearchHarness().run_fixture(
-            query=query,
-            case_id=case_id,
-            output_dir=output_dir,
-        )
-    else:
-        result = ResearchHarness().run(
-            query=query,
-            source_provider=provider,
-            output_dir=output_dir,
-        )
+    try:
+        if source_provider == "fixture":
+            result = ResearchHarness().run_fixture(
+                query=query,
+                case_id=case_id,
+                output_dir=output_dir,
+            )
+        else:
+            result = ResearchHarness().run(
+                query=query,
+                source_provider=provider,
+                output_dir=output_dir,
+            )
+    except SourceDiscoveryError as error:
+        typer.echo("status=failed")
+        typer.echo(f"error_type={error.code}")
+        typer.echo(f"error_message={error}")
+        raise typer.Exit(code=1)
     typer.echo(f"run_id={result.run_id}")
     typer.echo(f"status={result.status.value}")
     typer.echo(f"artifact_dir={result.artifact_dir}")
+    if result.status.value == "failed":
+        raise typer.Exit(code=1)
 
 
 @app.command("eval")
