@@ -10,17 +10,17 @@
 
 **Purpose**: 建立 live provider feature 的基础配置文件和回归边界，避免后续实现误提交 secret 或破坏 001 artifacts。
 
-- [ ] T001 [P] [P0] 创建 live provider 示例配置 in `.env.example`
+- [X] T001 [P] [P0] 创建 live provider 示例配置 in `.env.example`
   - DoD: `.env.example` 包含 `TRACERESEARCH_WEB_PROVIDER=exa`、空 `EXA_API_KEY=`、`TRACERESEARCH_WEB_TIMEOUT_SECONDS=10`、`TRACERESEARCH_WEB_MAX_RESULTS=5`，且无真实 secret。
   - Tests: 手动检查 `.env.example` 不含真实 key；后续由 T006/T032 覆盖。
   - Related files: `.env.example`, `specs/002-live-provider-demo-readiness/contracts/env-config-contract.md`
 
-- [ ] T002 [P] [P0] 校验 secret ignore policy in `.gitignore`
+- [X] T002 [P] [P0] 校验 secret ignore policy in `.gitignore`
   - DoD: `.env`、`.env.*` 被 ignore，`.env.example` 允许提交，`runs/*` 继续 ignore。
   - Tests: `git check-ignore .env`; `git check-ignore runs/example-run/artifact.json`; `git check-ignore -v .env.example` 应确认 `.env.example` 未被忽略。
   - Related files: `.gitignore`, `.env.example`
 
-- [ ] T003 [P] [P0] 记录 baseline fixture regression commands in `specs/002-live-provider-demo-readiness/quickstart.md`
+- [X] T003 [P] [P0] 记录 baseline fixture regression commands in `specs/002-live-provider-demo-readiness/quickstart.md`
   - DoD: quickstart 明确 `python3 -m pytest`、fixture eval、unconfigured web check、configured live smoke 均有命令；live smoke 标记为 manual only。
   - Tests: Markdown review；后续 T037/T038 执行命令验证。
   - Related files: `specs/002-live-provider-demo-readiness/quickstart.md`
@@ -31,37 +31,37 @@
 
 **Purpose**: 先写测试锁定 env/config、provider factory、Exa normalization、error mapping 和 CLI contract，再进入实现。
 
-- [ ] T004 [P] [P0] 编写 config/env loading unit tests in `tests/unit/test_config.py`
+- [X] T004 [P] [P0] 编写 config/env loading unit tests in `tests/unit/test_config.py`
   - DoD: 覆盖默认 provider、missing/blank `EXA_API_KEY`、timeout/max results defaults、非法 timeout/max results、config repr/error 不泄露 secret。
   - Tests: `python3 -m pytest tests/unit/test_config.py`，实现前允许失败。
   - Related files: `tests/unit/test_config.py`, `traceresearch/config.py`, `specs/002-live-provider-demo-readiness/contracts/env-config-contract.md`
 
-- [ ] T005 [P] [P0] 编写 provider factory unit tests in `tests/unit/test_provider_factory.py`
+- [X] T005 [P] [P0] 编写 provider factory unit tests in `tests/unit/test_provider_factory.py`
   - DoD: 覆盖 `fixture` 返回 `FixtureSourceProvider`、`web` missing key 返回/抛出 `provider_not_configured`、`web` configured 返回 Exa provider、unsupported provider 明确失败、web 失败不 fallback fixture。
   - Tests: `python3 -m pytest tests/unit/test_provider_factory.py`，实现前允许失败。
   - Related files: `tests/unit/test_provider_factory.py`, `traceresearch/source_discovery/factory.py`, `traceresearch/source_discovery/fixture_provider.py`, `traceresearch/source_discovery/exa_provider.py`
 
-- [ ] T006 [P] [P0] 编写 Exa provider normalization unit tests in `tests/unit/test_exa_provider.py`
+- [X] T006 [P] [P0] 编写 Exa provider normalization unit tests in `tests/unit/test_exa_provider.py`
   - DoD: 使用 mocked Exa response 覆盖 title/url/publishedDate/author/text/highlights/summary/requestId/costDollars 到 `SourceResult` / `SourceDocument` 的映射。
   - Tests: `python3 -m pytest tests/unit/test_exa_provider.py`，实现前允许失败。
   - Related files: `tests/unit/test_exa_provider.py`, `traceresearch/source_discovery/exa_provider.py`, `specs/002-live-provider-demo-readiness/contracts/source-provider-contract.md`
 
-- [ ] T007 [P] [P0] 编写 provider error mapping unit tests in `tests/unit/test_web_error_mapping.py`
+- [X] T007 [P] [P0] 编写 provider error mapping unit tests in `tests/unit/test_web_error_mapping.py`
   - DoD: 覆盖 missing key、timeout、401/403 auth、429 rate limit、5xx provider error、empty results、schema normalization error，且 error message 不含 `EXA_API_KEY` 值。
   - Tests: `python3 -m pytest tests/unit/test_web_error_mapping.py`，实现前允许失败。
   - Related files: `tests/unit/test_web_error_mapping.py`, `traceresearch/source_discovery/base.py`, `traceresearch/source_discovery/exa_provider.py`, `traceresearch/source_discovery/web_stub.py`
 
-- [ ] T008 [P] [P0] 编写 CLI web contract tests in `tests/integration/test_cli_web_provider.py`
+- [X] T008 [P] [P0] 编写 CLI web contract tests in `tests/integration/test_cli_web_provider.py`
   - DoD: 覆盖 `traceresearch run --source-provider web` unconfigured failure output、mocked configured success output、no fixture fallback signal。
   - Tests: `python3 -m pytest tests/integration/test_cli_web_provider.py`，实现前允许失败。
   - Related files: `tests/integration/test_cli_web_provider.py`, `traceresearch/cli.py`, `specs/002-live-provider-demo-readiness/contracts/cli-contract.md`
 
-- [ ] T009 [P] [P0] 编写 mocked web provider integration test in `tests/integration/test_run_web_provider.py`
+- [X] T009 [P] [P0] 编写 mocked web provider integration test in `tests/integration/test_run_web_provider.py`
   - DoD: mocked provider run 生成 `research_brief.json`、`evidence.jsonl`、`trace.jsonl`、`final_report.md`、`report.json`，final report key claims 包含 `[EV-...]`，Trace 包含 web provider step。
   - Tests: `python3 -m pytest tests/integration/test_run_web_provider.py`，实现前允许失败。
   - Related files: `tests/integration/test_run_web_provider.py`, `traceresearch/harness/orchestrator.py`, `traceresearch/source_discovery/base.py`
 
-- [ ] T010 [P] [P1] 编写 README/demo readiness content tests in `tests/unit/test_readme_demo_readiness.py`
+- [X] T010 [P] [P1] 编写 README/demo readiness content tests in `tests/unit/test_readme_demo_readiness.py`
   - DoD: 测试 README 包含 project positioning、architecture、fixture demo、live web demo、secret handling、eval/review workflow、limitations、interview demo path；`.env.example` 不含真实 key。
   - Tests: `python3 -m pytest tests/unit/test_readme_demo_readiness.py`，实现前允许失败。
   - Related files: `tests/unit/test_readme_demo_readiness.py`, `README.md`, `.env.example`, `specs/002-live-provider-demo-readiness/contracts/demo-readiness-contract.md`

@@ -18,7 +18,7 @@ traceresearch() { PYTHONPATH=. python3 -c 'from traceresearch.cli import app; ap
 
 ## 2. Fixture Regression
 
-Run tests:
+Baseline regression commands:
 
 ```bash
 python3 -m pytest
@@ -39,8 +39,12 @@ Expected:
 - Fixture eval runs 5 seed cases.
 - `case_pass_rate=1.0`.
 - 9 required metrics are present.
+- These commands are the deterministic regression gate for this feature.
+- Live smoke is manual only and must not be added to the default pytest gate.
 
 ## 3. Unconfigured Web Provider Check
+
+Manual smoke for the graceful failure path:
 
 ```bash
 unset EXA_API_KEY
