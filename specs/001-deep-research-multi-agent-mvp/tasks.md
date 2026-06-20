@@ -158,42 +158,42 @@ TASK LINE: - [ ] T001 [P] [US1] Description with file path
 
 ### Implementation for User Story 1
 
-- [ ] T025 [US1] P0: 实现 Planner in `traceresearch/agents/planner.py`
+- [X] T025 [US1] P0: 实现 Planner in `traceresearch/agents/planner.py`
   - DoD: 对明确 query 生成 `ResearchBrief`、至少 3 个 perspectives、research tasks 和 success criteria。
   - Tests: 覆盖 normal query、case metadata 输入、research task perspective 绑定。
   - Related files: `traceresearch/agents/planner.py`, `tests/unit/test_planner.py`
 
-- [ ] T026 [US1] P0: 实现 Researcher source summarization in `traceresearch/agents/researcher.py`
+- [X] T026 [US1] P0: 实现 Researcher source summarization in `traceresearch/agents/researcher.py`
   - DoD: 对每个 `ResearchTask` 调用 provider search/fetch，输出 `Evidence` candidates，不把 raw source dump 传给 Writer。
   - Tests: 覆盖 source discovery、空结果 no-evidence reason、summary/key_points/supported_claims。
   - Related files: `traceresearch/agents/researcher.py`, `tests/unit/test_researcher.py`
 
-- [ ] T027 [US1] P0: 实现 Writer outline and draft claims in `traceresearch/agents/writer.py`
+- [X] T027 [US1] P0: 实现 Writer outline and draft claims in `traceresearch/agents/writer.py`
   - DoD: Writer 第一阶段只生成 `outline.md` 和 draft claims package，不生成 final report；draft claims 包含 claim_id、text、candidate evidence IDs。
   - Tests: 覆盖 outline sections、draft claims JSON shape、无 evidence 时不生成强结论。
   - Related files: `traceresearch/agents/writer.py`, `tests/unit/test_writer_draft.py`
 
-- [ ] T028 [US1] P0: 实现 Verifier claim support check in `traceresearch/agents/verifier.py`
+- [X] T028 [US1] P0: 实现 Verifier claim support check in `traceresearch/agents/verifier.py`
   - DoD: 接收 Writer draft claims 后输出 `VerificationResult`，标记 supported、weakly_supported、unsupported、conflicting。
   - Tests: 覆盖 supported/unsupported/conflicting claims、citation_completeness、critical_hallucination_count。
   - Related files: `traceresearch/agents/verifier.py`, `tests/unit/test_verifier.py`
 
-- [ ] T029 [US1] P0: 实现 Critic post-verification review in `traceresearch/agents/critic.py`
+- [X] T029 [US1] P0: 实现 Critic post-verification review in `traceresearch/agents/critic.py`
   - DoD: Critic 在 Verifier 之后运行，检查 missing perspectives、weak sources、duplicate sections、unsupported claims、limitations，并输出 next_phase。
   - Tests: 覆盖 weak-source、missing-perspective、unsupported-claim、limitation-to-add。
   - Related files: `traceresearch/agents/critic.py`, `tests/unit/test_critic.py`
 
-- [ ] T030 [US1] P0: 实现 Writer final report generation in `traceresearch/agents/writer.py`
+- [X] T030 [US1] P0: 实现 Writer final report generation in `traceresearch/agents/writer.py`
   - DoD: Writer final 阶段只读取 verified evidence、VerificationResult 和 CritiqueResult，输出 `final_report.md` 与 `report.json`，key claims 均含 evidence IDs。
   - Tests: 覆盖 final report required sections、claim evidence IDs、unsupported_claims empty for pass。
   - Related files: `traceresearch/agents/writer.py`, `tests/unit/test_writer_final.py`
 
-- [ ] T031 [US1] P0: 实现 Harness execution order in `traceresearch/harness/orchestrator.py`
+- [X] T031 [US1] P0: 实现 Harness execution order in `traceresearch/harness/orchestrator.py`
   - DoD: 固定执行顺序为 `Planner -> Researcher -> Evidence Store -> Writer draft claims -> Verifier -> Critic -> Writer final report`，并为每步写 Trace。
   - Tests: integration test 断言 Trace 中 role/event 顺序符合该链路。
   - Related files: `traceresearch/harness/orchestrator.py`, `tests/integration/test_orchestrator_order.py`
 
-- [ ] T032 [US1] P0: 实现 CLI run command in `traceresearch/cli.py`
+- [X] T032 [US1] P0: 实现 CLI run command in `traceresearch/cli.py`
   - DoD: `traceresearch run --query ... --source-provider fixture --case-id ...` 创建 run artifacts，并打印 run_id/status/artifact_dir。
   - Tests: CLI runner test 覆盖 success、provider not configured、artifact paths。
   - Related files: `traceresearch/cli.py`, `tests/integration/test_cli_run.py`
