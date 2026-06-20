@@ -5,7 +5,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from traceresearch.trace.models import AgentRole
 from traceresearch.trace.models import TraceEvent
+
+
+REQUIRED_COMPLETED_RUN_ROLES = {
+    AgentRole.PLANNER,
+    AgentRole.RESEARCHER,
+    AgentRole.VERIFIER,
+    AgentRole.CRITIC,
+    AgentRole.WRITER,
+    AgentRole.HARNESS,
+}
 
 
 class TraceWriter:
@@ -29,3 +40,13 @@ class TraceWriter:
                     continue
                 events.append(TraceEvent.model_validate_json(line))
         return events
+
+    def validate_completed_run_coverage(
+        self,
+        required_roles: set[AgentRole] | None = None,
+    ) -> None:
+        required = required_roles or REQUIRED_COMPLETED_RUN_ROLES
+        present = {event.agent_role for event in self.read_all()}
+        missing = sorted(role.value for role in required - present)
+        if missing:
+            raise ValueError(f"completed run Trace is missing roles: {', '.join(missing)}")

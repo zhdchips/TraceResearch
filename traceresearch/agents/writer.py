@@ -12,6 +12,7 @@ from traceresearch.evidence.models import (
     ResearchBrief,
     VerificationResult,
 )
+from traceresearch.reports.renderer import render_evidence_references
 
 
 @dataclass(frozen=True)
@@ -82,10 +83,7 @@ class Writer:
             f"- {claim.text} " + " ".join(f"[{evidence_id}]" for evidence_id in claim.evidence_ids)
             for claim in claims
         ]
-        evidence_refs = [
-            f"- [{item.evidence_id}] {item.source.title} ({item.source.source_type.value}; {item.source.publisher or 'unknown publisher'})"
-            for item in verified_evidence
-        ]
+        evidence_refs = render_evidence_references(verified_evidence).splitlines()
         follow_ups = [
             "- Validate these findings against live web sources in a later provider integration.",
             "- Add broader benchmark cases before making production recommendations.",
@@ -142,7 +140,7 @@ class Writer:
             "limitations": limitations,
             "unsupported_claims": [],
             "evidence_references": [
-                evidence_by_id[evidence_id].source.title
+                f"{evidence_id}: {evidence_by_id[evidence_id].source.title}"
                 for claim in claims
                 for evidence_id in claim.evidence_ids
                 if evidence_id in evidence_by_id

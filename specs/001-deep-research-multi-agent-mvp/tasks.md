@@ -229,24 +229,24 @@ TASK LINE: - [ ] T001 [P] [US1] Description with file path
 
 ### Tests for User Story 3
 
-- [ ] T036 [P] [US3] P1: 编写 artifact inspection tests in `tests/integration/test_artifact_inspection.py`
+- [X] T036 [P] [US3] P1: 编写 artifact inspection tests in `tests/integration/test_artifact_inspection.py`
   - DoD: 测试从 `final_report.md` evidence ID 追溯到 `evidence.jsonl` 和相关 `trace.jsonl` events。
   - Tests: `pytest tests/integration/test_artifact_inspection.py`
   - Related files: `tests/integration/test_artifact_inspection.py`, `specs/001-deep-research-multi-agent-mvp/contracts/artifact-contract.md`
 
 ### Implementation for User Story 3
 
-- [ ] T037 [US3] P1: 实现 artifact read helpers in `traceresearch/harness/run_state.py`
+- [X] T037 [US3] P1: 实现 artifact read helpers in `traceresearch/harness/run_state.py`
   - DoD: 提供读取 run status、evidence by ID、trace events、report paths 的 helpers，供 quickstart/review/eval 使用。
   - Tests: 覆盖 completed/failed/needs_clarification run artifact 读取。
   - Related files: `traceresearch/harness/run_state.py`, `tests/unit/test_run_state.py`
 
-- [ ] T038 [US3] P1: 增强 report renderer evidence references in `traceresearch/reports/renderer.py`
+- [X] T038 [US3] P1: 增强 report renderer evidence references in `traceresearch/reports/renderer.py`
   - DoD: `final_report.md` 的 Evidence References section 列出 evidence ID、source title、source type、retrieved_at 和 limitation notes。
   - Tests: Snapshot 或 string tests 覆盖 Evidence References section。
   - Related files: `traceresearch/reports/renderer.py`, `tests/unit/test_report_renderer.py`
 
-- [ ] T039 [US3] P1: 实现 Trace coverage validation in `traceresearch/trace/writer.py`
+- [X] T039 [US3] P1: 实现 Trace coverage validation in `traceresearch/trace/writer.py`
   - DoD: completed run 必须至少包含 Planner、Researcher、Verifier、Critic、Writer 和 Harness 的 Trace events。
   - Tests: 覆盖缺失 role Trace 时 validation failed。
   - Related files: `traceresearch/trace/writer.py`, `tests/unit/test_trace_writer.py`

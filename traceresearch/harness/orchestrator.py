@@ -124,6 +124,15 @@ class ResearchHarness:
                 stored = evidence_store.add(item)
                 if stored.evidence_id not in {existing.evidence_id for existing in stored_evidence}:
                     stored_evidence.append(stored)
+            trace.record(
+                AgentRole.RESEARCHER,
+                EventType.TOOL_RESULT,
+                task.query,
+                "evidence_ids="
+                + ",".join(item.evidence_id for item in task_evidence),
+                task_id=task.research_task_id,
+                tool_name="fixture.search",
+            )
         trace.record(
             AgentRole.RESEARCHER,
             EventType.FINISH,
@@ -242,6 +251,7 @@ class ResearchHarness:
             "completed run",
             f"status={run.status.value}",
         )
+        trace.writer.validate_completed_run_coverage()
         return RunResult(
             run_id=run.run_id,
             status=run.status,

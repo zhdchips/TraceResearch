@@ -66,3 +66,41 @@ def test_trace_writer_lines_are_json(tmp_path: Path) -> None:
 
     assert line.startswith("{")
     assert '"trace_id":"TR-run-1-001"' in line
+
+
+def test_completed_run_trace_coverage_validates_required_roles(tmp_path: Path) -> None:
+    trace_path = tmp_path / "trace.jsonl"
+    writer = TraceWriter(trace_path)
+    for index, role in enumerate(
+        [
+            AgentRole.PLANNER,
+            AgentRole.RESEARCHER,
+            AgentRole.VERIFIER,
+            AgentRole.CRITIC,
+            AgentRole.WRITER,
+            AgentRole.HARNESS,
+        ],
+        start=1,
+    ):
+        event = _event(f"TR-run-1-{index:03d}", EventType.FINISH, TraceStatus.SUCCESS)
+        writer.append(event.model_copy(update={"agent_role": role}))
+
+    writer.validate_completed_run_coverage()
+
+
+def test_completed_run_trace_coverage_reports_missing_roles(tmp_path: Path) -> None:
+    trace_path = tmp_path / "trace.jsonl"
+    writer = TraceWriter(trace_path)
+    writer.append(
+        _event("TR-run-1-001", EventType.FINISH, TraceStatus.SUCCESS).model_copy(
+            update={"agent_role": AgentRole.PLANNER}
+        )
+    )
+
+    try:
+        writer.validate_completed_run_coverage()
+    except ValueError as error:
+        assert "Researcher" in str(error)
+        assert "Harness" in str(error)
+    else:  # pragma: no cover
+        raise AssertionError("Expected missing Trace roles to fail coverage validation")
