@@ -1,0 +1,27 @@
+case_id: 003-ai-coding-agent-trends
+theme: AI Coding Agent product forms and engineering challenges
+input_query: Summarize 2025-2026 AI Coding Agent trends, including product forms, engineering challenges, and risks.
+expected_perspectives:
+  - product forms
+  - developer workflow integration
+  - engineering reliability
+  - risk and limitation
+fixture_source_ids:
+  - 003-product-announcement
+  - 003-engineering-report
+  - 003-risk-analysis
+required_metrics:
+  - planner_coverage
+  - perspective_diversity
+  - source_relevance
+  - citation_completeness
+  - faithfulness
+  - unsupported_claim_count
+  - critical_hallucination_count
+pass_conditions:
+  critical_hallucination_count: 0
+  required_product_forms:
+    - IDE assistant
+    - coding agent
+    - autonomous task runner
+  citation_completeness_min: 0.9

@@ -1,0 +1,25 @@
+case_id: 002-financial-grounding
+theme: Financial research grounding and risk language
+input_query: Assess how a research assistant should ground high-risk financial analysis for a public-company investment memo.
+expected_perspectives:
+  - regulatory grounding
+  - financial data quality
+  - uncertainty and risk language
+  - conflicting evidence
+fixture_source_ids:
+  - 002-sec-risk-guidance
+  - 002-annual-report
+  - 002-analyst-methodology
+required_metrics:
+  - planner_coverage
+  - source_relevance
+  - source_authority
+  - citation_completeness
+  - faithfulness
+  - unsupported_claim_count
+  - critical_hallucination_count
+pass_conditions:
+  critical_hallucination_count: 0
+  requires_uncertainty_language: true
+  minimum_authority_score: 0.75
+  include_limitations: true

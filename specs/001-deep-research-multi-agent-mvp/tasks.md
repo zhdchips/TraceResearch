@@ -77,57 +77,57 @@ TASK LINE: - [ ] T001 [P] [US1] Description with file path
   - Tests: Contract test 验证 fixture/web providers 必须实现 search/fetch。
   - Related files: `traceresearch/source_discovery/base.py`, `tests/unit/test_source_provider_contract.py`, `specs/001-deep-research-multi-agent-mvp/contracts/source-provider-contract.md`
 
-- [ ] T011 [P] P0: 创建 eval case framework-comparison in `eval/cases/001-framework-comparison.yml`
+- [X] T011 [P] P0: 创建 eval case framework-comparison in `eval/cases/001-framework-comparison.yml`
   - DoD: case 包含 `case_id`、theme、input_query、expected_perspectives、fixture_source_ids、required_metrics、pass_conditions。
   - Tests: EvalCase loader 能加载并校验该 case。
   - Related files: `eval/cases/001-framework-comparison.yml`, `tests/eval/test_eval_case_loading.py`
 
-- [ ] T012 [P] P0: 创建 framework-comparison fixture sources in `eval/fixtures/sources/001-framework-comparison.yml`
+- [X] T012 [P] P0: 创建 framework-comparison fixture sources in `eval/fixtures/sources/001-framework-comparison.yml`
   - DoD: 至少包含 LangGraph、AutoGen、CrewAI 三类 source fixture，每条有 source metadata、excerpt、supported_claims、authority signal。
   - Tests: FixtureSourceProvider 能 search/fetch 该 case 全部 fixture sources。
   - Related files: `eval/fixtures/sources/001-framework-comparison.yml`, `tests/unit/test_fixture_provider.py`
 
-- [ ] T013 [P] P0: 创建 eval case financial-grounding in `eval/cases/002-financial-grounding.yml`
+- [X] T013 [P] P0: 创建 eval case financial-grounding in `eval/cases/002-financial-grounding.yml`
   - DoD: case 覆盖 high-risk financial research grounding、uncertainty、source authority 和 risk language。
   - Tests: EvalCase loader 校验 expected perspectives 和 pass conditions。
   - Related files: `eval/cases/002-financial-grounding.yml`, `tests/eval/test_eval_case_loading.py`
 
-- [ ] T014 [P] P0: 创建 financial-grounding fixture sources in `eval/fixtures/sources/002-financial-grounding.yml`
+- [X] T014 [P] P0: 创建 financial-grounding fixture sources in `eval/fixtures/sources/002-financial-grounding.yml`
   - DoD: fixture sources 覆盖 official/regulatory/reputable report 类型，并包含 limitation/conflicting evidence 示例。
   - Tests: FixtureSourceProvider 能返回 authority_score 输入信号。
   - Related files: `eval/fixtures/sources/002-financial-grounding.yml`, `tests/unit/test_fixture_provider.py`
 
-- [ ] T015 [P] P0: 创建 eval case ai-coding-agent-trends in `eval/cases/003-ai-coding-agent-trends.yml`
+- [X] T015 [P] P0: 创建 eval case ai-coding-agent-trends in `eval/cases/003-ai-coding-agent-trends.yml`
   - DoD: case 覆盖 AI Coding Agent product forms、engineering challenges、trend synthesis 和 citation completeness。
   - Tests: EvalCase loader 校验 required metrics 完整。
   - Related files: `eval/cases/003-ai-coding-agent-trends.yml`, `tests/eval/test_eval_case_loading.py`
 
-- [ ] T016 [P] P0: 创建 ai-coding-agent-trends fixture sources in `eval/fixtures/sources/003-ai-coding-agent-trends.yml`
+- [X] T016 [P] P0: 创建 ai-coding-agent-trends fixture sources in `eval/fixtures/sources/003-ai-coding-agent-trends.yml`
   - DoD: fixture sources 至少覆盖 product form、engineering challenge、risk/limitation 三类 evidence。
   - Tests: FixtureSourceProvider fetch 返回 content_excerpt 和 supported_claims。
   - Related files: `eval/fixtures/sources/003-ai-coding-agent-trends.yml`, `tests/unit/test_fixture_provider.py`
 
-- [ ] T017 [P] P0: 创建 eval case openhands-runtime in `eval/cases/004-openhands-runtime.yml`
+- [X] T017 [P] P0: 创建 eval case openhands-runtime in `eval/cases/004-openhands-runtime.yml`
   - DoD: case 覆盖 source/project research、runtime design、traceability 和 Agent Runtime terminology。
   - Tests: EvalCase loader 校验 fixture_source_ids 存在。
   - Related files: `eval/cases/004-openhands-runtime.yml`, `tests/eval/test_eval_case_loading.py`
 
-- [ ] T018 [P] P0: 创建 openhands-runtime fixture sources in `eval/fixtures/sources/004-openhands-runtime.yml`
+- [X] T018 [P] P0: 创建 openhands-runtime fixture sources in `eval/fixtures/sources/004-openhands-runtime.yml`
   - DoD: fixture sources 包含项目/文档/架构信息，支持 runtime design claims。
   - Tests: FixtureSourceProvider search 能按 task perspective 过滤或排序。
   - Related files: `eval/fixtures/sources/004-openhands-runtime.yml`, `tests/unit/test_fixture_provider.py`
 
-- [ ] T019 [P] P0: 创建 eval case rag-2026 in `eval/cases/005-rag-2026.yml`
+- [X] T019 [P] P0: 创建 eval case rag-2026 in `eval/cases/005-rag-2026.yml`
   - DoD: case 覆盖 controversial question、balanced evidence、limitations 和 follow-up questions。
   - Tests: EvalCase loader 校验 conflicting/balanced pass conditions。
   - Related files: `eval/cases/005-rag-2026.yml`, `tests/eval/test_eval_case_loading.py`
 
-- [ ] T020 [P] P0: 创建 rag-2026 fixture sources in `eval/fixtures/sources/005-rag-2026.yml`
+- [X] T020 [P] P0: 创建 rag-2026 fixture sources in `eval/fixtures/sources/005-rag-2026.yml`
   - DoD: fixture sources 同时包含 supporting、challenging、nuanced evidence，避免单边结论。
   - Tests: FixtureSourceProvider fetch 能返回 conflicting evidence 标记。
   - Related files: `eval/fixtures/sources/005-rag-2026.yml`, `tests/unit/test_fixture_provider.py`
 
-- [ ] T021 P0: 实现 FixtureSourceProvider in `traceresearch/source_discovery/fixture_provider.py`
+- [X] T021 P0: 实现 FixtureSourceProvider in `traceresearch/source_discovery/fixture_provider.py`
   - DoD: 能读取 `eval/cases/*.yml` 和 `eval/fixtures/sources/*.yml`，按 case/task 返回 deterministic `SourceResult[]` 并 fetch `SourceDocument`。
   - Tests: 覆盖 5 个 seed cases 的 search/fetch、无 source、source_id 不存在。
   - Related files: `traceresearch/source_discovery/fixture_provider.py`, `tests/unit/test_fixture_provider.py`

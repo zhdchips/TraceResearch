@@ -1,0 +1,89 @@
+case_id: 003-ai-coding-agent-trends
+sources:
+  - source_id: 003-product-announcement
+    title: AI coding agent product announcement roundup
+    url: https://example.test/ai-coding-agents/product-forms
+    source_type: report
+    publisher: Developer Tools Review
+    published_at: 2026-01-22
+    retrieved_at: 2026-06-18T00:00:00Z
+    snippet: Product forms include IDE assistants, chat-based coding agents, repository task runners, and cloud execution agents.
+    content_excerpt: The roundup categorizes AI coding products into IDE copilots, chat assistants, coding agents that operate on repository tasks, and cloud agents that can run tests and open pull requests.
+    perspectives:
+      - product forms
+      - developer workflow integration
+    task_keywords:
+      - product forms
+      - IDE assistant
+      - coding agent
+      - autonomous task runner
+    supported_claims:
+      - AI Coding Agent products span IDE assistants, coding agents, and autonomous task runners.
+      - Workflow integration is a differentiator for developer adoption.
+    key_points:
+      - Identifies several product forms.
+      - Connects product form to workflow integration.
+      - Notes pull-request-oriented agents.
+    limitations:
+      - Product announcements can overstate production reliability.
+    authority_signal: industry report
+    authority_score: 0.76
+    relevance_score: 0.94
+  - source_id: 003-engineering-report
+    title: Engineering reliability report for coding agents
+    url: https://example.test/ai-coding-agents/reliability
+    source_type: report
+    publisher: Software Engineering Lab
+    published_at: 2026-03-18
+    retrieved_at: 2026-06-18T00:00:00Z
+    snippet: Reliability challenges include flaky tests, environment setup, dependency drift, context limits, and evaluating generated code changes.
+    content_excerpt: The report finds that useful coding agents depend on reproducible environments, fast test feedback, repository context selection, and review loops that catch incorrect but plausible edits.
+    perspectives:
+      - engineering reliability
+      - developer workflow integration
+    task_keywords:
+      - reliability
+      - tests
+      - environment
+      - context
+    supported_claims:
+      - Engineering reliability is a central barrier for coding agents.
+      - Reproducible runtime and tests are required for trustworthy autonomous edits.
+    key_points:
+      - Highlights environment reproducibility.
+      - Explains test feedback loops.
+      - Notes context-selection constraints.
+    limitations:
+      - Results vary by repository and test quality.
+    authority_signal: engineering research report
+    authority_score: 0.82
+    relevance_score: 0.92
+  - source_id: 003-risk-analysis
+    title: Coding agent risk and limitation analysis
+    url: https://example.test/ai-coding-agents/risks
+    source_type: blog
+    publisher: Secure Software Notes
+    published_at: 2026-05-02
+    retrieved_at: 2026-06-18T00:00:00Z
+    snippet: Risks include insecure code generation, hidden dependency changes, prompt injection through repository content, and review fatigue.
+    content_excerpt: The analysis argues that coding agents need permission boundaries, audit logs, dependency-change visibility, and human review because repository content and generated code can introduce security and maintenance risks.
+    perspectives:
+      - risk and limitation
+      - engineering reliability
+    task_keywords:
+      - risk
+      - security
+      - prompt injection
+      - review
+    supported_claims:
+      - Coding agents need auditability and permission boundaries.
+      - Security and review risks remain despite productivity gains.
+    key_points:
+      - Mentions prompt injection risks.
+      - Calls for audit logs.
+      - Notes review fatigue.
+    limitations:
+      - Blog analysis is less authoritative than formal benchmark data.
+    authority_signal: expert practitioner analysis
+    authority_score: 0.68
+    relevance_score: 0.87

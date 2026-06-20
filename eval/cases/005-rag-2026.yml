@@ -1,0 +1,25 @@
+case_id: 005-rag-2026
+theme: Whether RAG remains important in 2026
+input_query: Is RAG still important in 2026, or have long-context models and agentic search made it obsolete?
+expected_perspectives:
+  - supporting evidence
+  - challenging evidence
+  - nuanced synthesis
+  - limitations and follow-up questions
+fixture_source_ids:
+  - 005-rag-supporting
+  - 005-long-context-challenge
+  - 005-hybrid-nuanced
+required_metrics:
+  - planner_coverage
+  - perspective_diversity
+  - source_relevance
+  - citation_completeness
+  - faithfulness
+  - unsupported_claim_count
+  - critical_hallucination_count
+pass_conditions:
+  critical_hallucination_count: 0
+  requires_balanced_evidence: true
+  requires_conflicting_evidence: true
+  follow_up_questions_min: 2

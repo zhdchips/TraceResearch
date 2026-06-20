@@ -1,0 +1,90 @@
+case_id: 002-financial-grounding
+sources:
+  - source_id: 002-sec-risk-guidance
+    title: SEC investor bulletin on research risks
+    url: https://example.test/sec/investor-risk-bulletin
+    source_type: official_doc
+    publisher: U.S. Securities and Exchange Commission
+    published_at: 2025-11-20
+    retrieved_at: 2026-06-18T00:00:00Z
+    snippet: Regulatory investor guidance stresses uncertainty, disclosure quality, conflicts of interest, and the need to avoid guaranteed-return language.
+    content_excerpt: The investor bulletin explains that investment research should distinguish facts from projections, disclose uncertainty, identify source limitations, and avoid implying guaranteed outcomes.
+    perspectives:
+      - regulatory grounding
+      - uncertainty and risk language
+    task_keywords:
+      - regulation
+      - SEC
+      - risk
+      - uncertainty
+    supported_claims:
+      - High-risk financial research must avoid deterministic investment claims.
+      - Regulatory sources should anchor risk and uncertainty language.
+    key_points:
+      - Separates facts, assumptions, and projections.
+      - Warns against guaranteed-return framing.
+      - Highlights disclosure limitations.
+    limitations:
+      - Does not provide company-specific financial data.
+    authority_signal: regulator
+    authority_score: 0.98
+    relevance_score: 0.91
+  - source_id: 002-annual-report
+    title: Public company annual report risk factors
+    url: https://example.test/company/annual-report
+    source_type: report
+    publisher: Example Public Company
+    published_at: 2026-02-28
+    retrieved_at: 2026-06-18T00:00:00Z
+    snippet: The annual report lists revenue concentration, supply-chain exposure, market volatility, and forward-looking statement limitations.
+    content_excerpt: The annual report provides audited financial context and risk factors, including revenue concentration and dependency on uncertain demand forecasts. It states that forward-looking statements are subject to material risks.
+    perspectives:
+      - financial data quality
+      - uncertainty and risk language
+    task_keywords:
+      - annual report
+      - risk factors
+      - financial data
+      - public company
+    supported_claims:
+      - Company filings can ground financial analysis in reported risks and audited context.
+      - Forward-looking projections require explicit caveats.
+    key_points:
+      - Contains audited reporting context.
+      - Includes management risk disclosures.
+      - Identifies forward-looking statement limits.
+    limitations:
+      - Issuer disclosures can be selective and backward-looking.
+    authority_signal: company filing
+    authority_score: 0.86
+    relevance_score: 0.88
+  - source_id: 002-analyst-methodology
+    title: Independent analyst methodology note
+    url: https://example.test/research/methodology-note
+    source_type: report
+    publisher: Independent Research Institute
+    published_at: 2026-04-01
+    retrieved_at: 2026-06-18T00:00:00Z
+    snippet: Analyst methodology notes describe valuation assumptions, confidence bands, sensitivity analysis, and reasons estimates can conflict.
+    content_excerpt: The methodology note recommends presenting valuation outputs as ranges, describing sensitivity to revenue growth and margin assumptions, and documenting cases where official filings and market data point in different directions.
+    perspectives:
+      - conflicting evidence
+      - financial data quality
+    task_keywords:
+      - methodology
+      - valuation
+      - sensitivity
+      - conflicting evidence
+    supported_claims:
+      - Financial research should surface sensitivity and conflicting evidence.
+      - Single-point estimates are weaker than ranges when assumptions drive outcomes.
+    key_points:
+      - Uses sensitivity analysis.
+      - Documents confidence bands.
+      - Calls out conflicting evidence.
+    limitations:
+      - Analyst methodology may embed subjective assumptions.
+    authority_signal: reputable research methodology
+    authority_score: 0.78
+    relevance_score: 0.85
+    conflicting_evidence: true

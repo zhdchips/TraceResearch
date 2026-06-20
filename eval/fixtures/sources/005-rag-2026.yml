@@ -1,0 +1,92 @@
+case_id: 005-rag-2026
+sources:
+  - source_id: 005-rag-supporting
+    title: Enterprise retrieval report for RAG systems
+    url: https://example.test/rag-2026/enterprise-retrieval
+    source_type: report
+    publisher: Enterprise AI Systems Lab
+    published_at: 2026-02-14
+    retrieved_at: 2026-06-18T00:00:00Z
+    snippet: Enterprise deployments still use retrieval to connect models to private, changing, access-controlled knowledge.
+    content_excerpt: The report argues that RAG remains important where organizations need private data access, freshness, citations, permission controls, and lower-cost updates than model retraining.
+    perspectives:
+      - supporting evidence
+      - nuanced synthesis
+    task_keywords:
+      - RAG
+      - enterprise
+      - retrieval
+      - private data
+    supported_claims:
+      - RAG remains important for private and frequently changing enterprise knowledge.
+      - Retrieval can improve citation and access-control workflows.
+    key_points:
+      - Addresses private data and freshness.
+      - Connects retrieval with access control.
+      - Supports citation workflows.
+    limitations:
+      - Retrieval quality depends on indexing and chunking choices.
+    authority_signal: systems report
+    authority_score: 0.82
+    relevance_score: 0.93
+  - source_id: 005-long-context-challenge
+    title: Long-context model benchmark analysis
+    url: https://example.test/rag-2026/long-context
+    source_type: paper
+    publisher: Long Context Evaluation Group
+    published_at: 2026-03-27
+    retrieved_at: 2026-06-18T00:00:00Z
+    snippet: Long-context models reduce the need for retrieval in some workflows but can be expensive and still struggle with source selection.
+    content_excerpt: The benchmark analysis finds that long-context models can absorb larger document sets directly, challenging simple RAG pipelines, but cost, latency, stale context, and attribution quality remain concerns.
+    perspectives:
+      - challenging evidence
+      - limitations and follow-up questions
+    task_keywords:
+      - long-context
+      - benchmark
+      - challenge
+      - attribution
+    supported_claims:
+      - Long-context models challenge some traditional RAG use cases.
+      - Cost, latency, and attribution concerns prevent a blanket replacement claim.
+    key_points:
+      - Shows improvements from long context.
+      - Identifies cost and latency tradeoffs.
+      - Raises attribution limitations.
+    limitations:
+      - Benchmark tasks may not represent all enterprise workflows.
+    authority_signal: benchmark paper
+    authority_score: 0.86
+    relevance_score: 0.91
+    conflicting_evidence: true
+  - source_id: 005-hybrid-nuanced
+    title: Hybrid retrieval and agentic search design note
+    url: https://example.test/rag-2026/hybrid-search
+    source_type: blog
+    publisher: Applied LLM Systems
+    published_at: 2026-05-16
+    retrieved_at: 2026-06-18T00:00:00Z
+    snippet: Hybrid systems combine retrieval, long context, reranking, and agentic search rather than treating RAG as a single fixed architecture.
+    content_excerpt: The design note recommends treating RAG as a family of retrieval-grounded patterns. It argues that mature systems combine retrieval, long context, query planning, reranking, and citation checks.
+    perspectives:
+      - nuanced synthesis
+      - supporting evidence
+      - challenging evidence
+    task_keywords:
+      - hybrid
+      - agentic search
+      - reranking
+      - citation
+    supported_claims:
+      - A balanced 2026 view treats RAG as evolving rather than obsolete.
+      - Hybrid retrieval and long-context designs can coexist.
+    key_points:
+      - Frames RAG as a family of patterns.
+      - Combines retrieval and long context.
+      - Calls for citation checks.
+    limitations:
+      - Practitioner guidance may be less rigorous than peer-reviewed evidence.
+    authority_signal: practitioner design note
+    authority_score: 0.72
+    relevance_score: 0.89
+    conflicting_evidence: true

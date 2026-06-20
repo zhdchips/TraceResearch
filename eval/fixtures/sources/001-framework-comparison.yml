@@ -1,0 +1,89 @@
+case_id: 001-framework-comparison
+sources:
+  - source_id: 001-langgraph-doc
+    title: LangGraph orchestration documentation
+    url: https://example.test/langgraph/orchestration
+    source_type: official_doc
+    publisher: LangGraph Project
+    published_at: 2026-01-15
+    retrieved_at: 2026-06-18T00:00:00Z
+    snippet: LangGraph emphasizes explicit graph state, controllable orchestration, persistence, and human-in-the-loop paths for agent workflows.
+    content_excerpt: LangGraph documentation describes agent workflows as graphs with nodes, edges, persistent state, checkpoints, and controllable execution paths. It is positioned for developers who need precise orchestration and inspectable state transitions.
+    perspectives:
+      - orchestration model
+      - production readiness
+    task_keywords:
+      - LangGraph
+      - orchestration
+      - graph
+      - state
+    supported_claims:
+      - LangGraph is strongest when explicit workflow control and state inspection matter.
+      - Graph-based orchestration helps make research loops more traceable.
+    key_points:
+      - Uses graph structure for agent workflows.
+      - Supports persistence and checkpoints.
+      - Fits production workflows that need control.
+    limitations:
+      - Requires developers to model workflow state explicitly.
+    authority_signal: project documentation
+    authority_score: 0.92
+    relevance_score: 0.95
+  - source_id: 001-autogen-doc
+    title: AutoGen multi-agent conversation documentation
+    url: https://example.test/autogen/multi-agent
+    source_type: official_doc
+    publisher: AutoGen Project
+    published_at: 2026-02-10
+    retrieved_at: 2026-06-18T00:00:00Z
+    snippet: AutoGen focuses on composable agents that exchange messages and coordinate through conversation patterns.
+    content_excerpt: AutoGen documentation presents a programming model for building applications from multiple agents that communicate through message-based conversations. It is useful for collaborative problem solving where distinct agent roles interact.
+    perspectives:
+      - multi-agent collaboration
+      - orchestration model
+    task_keywords:
+      - AutoGen
+      - multi-agent
+      - collaboration
+      - conversation
+    supported_claims:
+      - AutoGen is oriented around message-based multi-agent collaboration.
+      - Conversational coordination can express role-based research workflows.
+    key_points:
+      - Models workflows as conversations among agents.
+      - Makes agent roles explicit.
+      - Requires careful control to avoid unbounded dialogue.
+    limitations:
+      - Conversation loops need guardrails for determinism and cost.
+    authority_signal: project documentation
+    authority_score: 0.9
+    relevance_score: 0.92
+  - source_id: 001-crewai-doc
+    title: CrewAI role-based agent workflow documentation
+    url: https://example.test/crewai/roles
+    source_type: official_doc
+    publisher: CrewAI Project
+    published_at: 2026-03-05
+    retrieved_at: 2026-06-18T00:00:00Z
+    snippet: CrewAI describes crews, agents, tasks, and process abstractions for role-oriented multi-agent workflows.
+    content_excerpt: CrewAI documentation emphasizes role assignment, task delegation, and process-level coordination. It is approachable for teams that want named agents and tasks without designing a lower-level graph from scratch.
+    perspectives:
+      - multi-agent collaboration
+      - risks and limitations
+    task_keywords:
+      - CrewAI
+      - roles
+      - tasks
+      - process
+    supported_claims:
+      - CrewAI favors role-based task delegation for multi-agent workflows.
+      - Higher-level abstractions can speed prototypes but may hide orchestration details.
+    key_points:
+      - Uses crews, agents, and tasks as core abstractions.
+      - Optimized for approachable role-based workflows.
+      - Less explicit than graph-first orchestration.
+    limitations:
+      - Teams may need additional tracing to inspect fine-grained execution.
+    authority_signal: project documentation
+    authority_score: 0.88
+    relevance_score: 0.9

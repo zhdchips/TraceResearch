@@ -1,0 +1,89 @@
+case_id: 004-openhands-runtime
+sources:
+  - source_id: 004-openhands-readme
+    title: OpenHands project README overview
+    url: https://example.test/openhands/readme
+    source_type: repo
+    publisher: OpenHands Project
+    published_at: 2026-01-30
+    retrieved_at: 2026-06-18T00:00:00Z
+    snippet: The project README frames OpenHands as an agentic software engineering system that acts in a workspace and records actions.
+    content_excerpt: The README describes an agent that can operate on software tasks, interact with files and commands, and expose execution information for inspection by developers.
+    perspectives:
+      - project architecture
+      - agent terminology
+    task_keywords:
+      - OpenHands
+      - README
+      - agent
+      - project
+    supported_claims:
+      - OpenHands is best researched as a software-engineering agent system, not only a chatbot.
+      - Project documentation should ground terminology choices.
+    key_points:
+      - Describes agentic software engineering tasks.
+      - Mentions file and command interaction.
+      - Supports project-level framing.
+    limitations:
+      - README-level descriptions may omit lower-level runtime details.
+    authority_signal: project repository
+    authority_score: 0.9
+    relevance_score: 0.9
+  - source_id: 004-runtime-doc
+    title: OpenHands runtime and workspace isolation notes
+    url: https://example.test/openhands/runtime
+    source_type: official_doc
+    publisher: OpenHands Project
+    published_at: 2026-04-12
+    retrieved_at: 2026-06-18T00:00:00Z
+    snippet: Runtime notes discuss workspace isolation, command execution boundaries, and how agent actions are mediated by runtime services.
+    content_excerpt: Runtime documentation explains that agent execution should occur through a controlled runtime layer, with workspace isolation, mediated tool execution, and explicit records of actions and observations.
+    perspectives:
+      - runtime isolation
+      - traceability
+    task_keywords:
+      - runtime
+      - isolation
+      - workspace
+      - tool execution
+    supported_claims:
+      - Agent Runtime design should separate agent decisions from controlled execution.
+      - Workspace isolation is a core runtime concern.
+    key_points:
+      - Introduces controlled runtime layer.
+      - Mentions workspace isolation.
+      - Connects tool execution with traceability.
+    limitations:
+      - Details are implementation-specific and may change.
+    authority_signal: project documentation
+    authority_score: 0.93
+    relevance_score: 0.96
+  - source_id: 004-architecture-note
+    title: OpenHands architecture note on event streams
+    url: https://example.test/openhands/event-stream
+    source_type: official_doc
+    publisher: OpenHands Project
+    published_at: 2026-05-08
+    retrieved_at: 2026-06-18T00:00:00Z
+    snippet: Architecture notes describe event streams as a traceable record of agent actions, observations, and state transitions.
+    content_excerpt: The architecture note describes an event stream that records actions, observations, errors, and transitions, making agent execution inspectable and replay-friendly for debugging.
+    perspectives:
+      - traceability
+      - agent terminology
+    task_keywords:
+      - event stream
+      - traceability
+      - actions
+      - observations
+    supported_claims:
+      - Event streams are useful for tracing agent execution.
+      - Traceability depends on recording actions and observations, not just final answers.
+    key_points:
+      - Defines event stream as execution record.
+      - Supports debugging and replay.
+      - Captures actions and observations.
+    limitations:
+      - Event logs require summarization to remain usable.
+    authority_signal: architecture documentation
+    authority_score: 0.91
+    relevance_score: 0.95

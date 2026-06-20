@@ -1,0 +1,29 @@
+case_id: 001-framework-comparison
+theme: LangGraph vs AutoGen vs CrewAI framework comparison
+input_query: Compare LangGraph, AutoGen, and CrewAI for building evidence-grounded deep research agents.
+expected_perspectives:
+  - orchestration model
+  - multi-agent collaboration
+  - production readiness
+  - risks and limitations
+fixture_source_ids:
+  - 001-langgraph-doc
+  - 001-autogen-doc
+  - 001-crewai-doc
+required_metrics:
+  - planner_coverage
+  - perspective_diversity
+  - source_relevance
+  - source_authority
+  - citation_completeness
+  - faithfulness
+  - unsupported_claim_count
+  - critical_hallucination_count
+pass_conditions:
+  critical_hallucination_count: 0
+  unsupported_claim_count_max: 0
+  minimum_fixture_sources: 3
+  required_perspectives:
+    - orchestration model
+    - multi-agent collaboration
+    - production readiness

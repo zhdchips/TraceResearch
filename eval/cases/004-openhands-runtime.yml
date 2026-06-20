@@ -1,0 +1,27 @@
+case_id: 004-openhands-runtime
+theme: OpenHands Agent Runtime design
+input_query: Research the OpenHands runtime design and explain how traceability, isolation, and agent execution terminology should be represented.
+expected_perspectives:
+  - project architecture
+  - runtime isolation
+  - traceability
+  - agent terminology
+fixture_source_ids:
+  - 004-openhands-readme
+  - 004-runtime-doc
+  - 004-architecture-note
+required_metrics:
+  - planner_coverage
+  - perspective_diversity
+  - source_relevance
+  - source_authority
+  - citation_completeness
+  - faithfulness
+  - critical_hallucination_count
+pass_conditions:
+  critical_hallucination_count: 0
+  required_terms:
+    - Agent Runtime
+    - event stream
+    - workspace isolation
+  traceability_required: true
