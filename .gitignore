@@ -27,3 +27,7 @@ Thumbs.db
 *.swp
 .vscode/
 .idea/
+
+# Local run artifacts
+runs/*
+!runs/.gitkeep

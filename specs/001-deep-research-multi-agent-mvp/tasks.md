@@ -294,17 +294,17 @@ TASK LINE: - [ ] T001 [P] [US1] Description with file path
 
 **Purpose**: 完成 cross-cutting validation、文档同步、真实 eval/review workflow。
 
-- [ ] T046 P1: 更新 quickstart implementation notes in `specs/001-deep-research-multi-agent-mvp/quickstart.md`
+- [X] T046 P1: 更新 quickstart implementation notes in `specs/001-deep-research-multi-agent-mvp/quickstart.md`
   - DoD: quickstart 命令与最终 CLI 一致，并包含 run/eval/inspect evidence grounding 的实际路径。
   - Tests: 手动执行 quickstart 命令或记录未执行原因。
   - Related files: `specs/001-deep-research-multi-agent-mvp/quickstart.md`, `traceresearch/cli.py`
 
-- [ ] T047 P1: 运行完整 test suite and fix failures in `tests/`
+- [X] T047 P1: 运行完整 test suite and fix failures in `tests/`
   - DoD: `pytest` 全部通过；如存在不可运行测试，必须在任务备注中说明阻塞原因。
   - Tests: `pytest`
   - Related files: `tests/`, `pyproject.toml`
 
-- [ ] T048 P1: 运行 seed eval suite and save result in `eval/results/`
+- [X] T048 P1: 运行 seed eval suite and save result in `eval/results/`
   - DoD: `traceresearch eval --cases-dir eval/cases --source-provider fixture --results-dir eval/results` 生成 summary，且包含 9 个 required metrics。
   - Tests: 检查 `eval/results/<eval_run_id>-summary.json` 存在并通过 JSON/schema validation。
   - Related files: `eval/results/`, `traceresearch/eval/runner.py`, `traceresearch/eval/metrics.py`
