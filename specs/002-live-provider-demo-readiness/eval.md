@@ -82,15 +82,51 @@ notes:
 
 ## Latest Result
 
-Pending T034-T039 validation.
+- Date: 2026-06-21 02:07:00 CST
+- Full pytest: PASS, `117 passed`
+- Fixture eval: PASS, 5 seed cases executed, 5/5 pass
+- Fixture eval summary: `eval/results/eval-20260620180616-26276f94-summary.json`
+- Required metrics: PASS, all 5 case results include 9 required metrics
+- Unconfigured web smoke: PASS
+  - Command:
+
+    ```bash
+    unset EXA_API_KEY
+    traceresearch run --query "What changed in AI coding agents during the last 12 months?" --source-provider web --output-dir runs
+    ```
+
+  - Observed output:
+
+    ```text
+    status=failed
+    error_type=provider_not_configured
+    error_message=Source discovery provider is not configured: exa
+    ```
+
+  - No silent fallback to Fixture was observed.
+- Configured live smoke: skipped
+  - Skip reason: local `EXA_API_KEY` was not present in the execution environment.
+  - Exact command to run when a key is available:
+
+    ```bash
+    export TRACERESEARCH_WEB_PROVIDER=exa
+    export EXA_API_KEY=
+    export TRACERESEARCH_WEB_TIMEOUT_SECONDS=10
+    export TRACERESEARCH_WEB_MAX_RESULTS=5
+    traceresearch run --query "What changed in AI coding agents during the last 12 months?" --source-provider web --output-dir runs
+    ```
+
+- Secret scan: PASS
+  - `git ls-files | rg '(^|/)\.env$'` returned no tracked `.env`.
+  - Targeted tracked-file scan outside test/tool/template paths found no real API key pattern.
+  - Broad scan only matched known fake redaction tokens in tests and `Risk-001` text, not real secrets.
 
 ## Bad Cases
 
-Pending live smoke and fixture eval validation.
+- None for fixture eval.
+- Live configured smoke was skipped because no local `EXA_API_KEY` was available.
 
 ## Next Review Focus
 
-- Confirm fixture eval remains the required gate.
-- Confirm live smoke stays manual/non-CI.
-- Confirm configured success or skip reason is recorded.
-- Confirm unconfigured web failure remains visible and does not fallback to Fixture.
+- Review `review.md` decision and Non-Goals check.
+- If a real Exa key becomes available, run the configured live smoke command above and append artifact path.

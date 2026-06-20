@@ -235,37 +235,37 @@
 
 **Purpose**: 汇总验证、fixture regression、manual live smoke 记录、eval/review artifacts，并确认未实现 Non-Goals。
 
-- [ ] T034 [P0] 运行 full pytest regression in `tests/`
+- [X] T034 [P0] 运行 full pytest regression in `tests/`
   - DoD: 所有 tests 通过；必须保持 001 原有测试不破坏，新增测试也通过。
   - Tests: `python3 -m pytest`
   - Related files: `tests/`, `traceresearch/`, `pyproject.toml`
 
-- [ ] T035 [P0] 运行 fixture eval regression and save summary in `eval/results/`
+- [X] T035 [P0] 运行 fixture eval regression and save summary in `eval/results/`
   - DoD: `traceresearch eval --cases-dir eval/cases --source-provider fixture --results-dir eval/results` 生成 summary；5 seed cases 5/5 pass；9 metrics present。
   - Tests: `traceresearch eval --cases-dir eval/cases --source-provider fixture --results-dir eval/results`; JSON validation script from quickstart.
   - Related files: `eval/results/`, `eval/cases/`, `eval/fixtures/sources/`, `traceresearch/eval/runner.py`
 
-- [ ] T036 [P0] 验证 unconfigured web smoke in `specs/002-live-provider-demo-readiness/eval.md`
+- [X] T036 [P0] 验证 unconfigured web smoke in `specs/002-live-provider-demo-readiness/eval.md`
   - DoD: `unset EXA_API_KEY` 后运行 `traceresearch run --source-provider web`，记录 `provider_not_configured`、no fallback 结果到 eval notes。
   - Tests: `unset EXA_API_KEY && traceresearch run --query "What changed in AI coding agents during the last 12 months?" --source-provider web --output-dir runs`
   - Related files: `specs/002-live-provider-demo-readiness/eval.md`, `README.md`, `traceresearch/cli.py`
 
-- [ ] T037 [P1] 记录 configured live smoke result or skip reason in `specs/002-live-provider-demo-readiness/eval.md`
+- [X] T037 [P1] 记录 configured live smoke result or skip reason in `specs/002-live-provider-demo-readiness/eval.md`
   - DoD: 如果本地有 `EXA_API_KEY`，运行 live smoke 并记录 artifact path；如果没有 key，记录 skip reason 和 exact command；不将 live smoke 加入 pytest gate。
   - Tests: Manual `traceresearch run --source-provider web` with `EXA_API_KEY` when available; otherwise document not run.
   - Related files: `specs/002-live-provider-demo-readiness/eval.md`, `README.md`, `runs/`
 
-- [ ] T038 [P1] 执行 secret scan and tracked-file review in repository root
+- [X] T038 [P1] 执行 secret scan and tracked-file review in repository root
   - DoD: 确认 tracked files 不含真实 API key；`.env` 未被跟踪；Trace/report 不包含 secret；记录检查结果。
   - Tests: `git status --short`; `git ls-files | rg '(^|/)\\.env$'` should return empty; targeted `rg` for fake/real key patterns where safe。
   - Related files: `.env.example`, `.gitignore`, `README.md`, `specs/002-live-provider-demo-readiness/review.md`
 
-- [ ] T039 [P1] 更新 review artifact in `specs/002-live-provider-demo-readiness/review.md`
+- [X] T039 [P1] 更新 review artifact in `specs/002-live-provider-demo-readiness/review.md`
   - DoD: review 包含 decision、next_phase、findings、bad cases、known limitations、next actions；若 fixture eval 或 grounding gate 失败，不得 complete。
   - Tests: Markdown review; verify decision block exists.
   - Related files: `specs/002-live-provider-demo-readiness/review.md`, `specs/002-live-provider-demo-readiness/eval.md`, `eval/results/`
 
-- [ ] T040 [P1] 验证 Non-Goals 未越界 in `specs/002-live-provider-demo-readiness/review.md`
+- [X] T040 [P1] 验证 Non-Goals 未越界 in `specs/002-live-provider-demo-readiness/review.md`
   - DoD: review 明确未实现 LLM-backed agents、Web UI、PDF/HTML export、大规模 benchmark、live web CI gate；若代码引入这些范围，必须回到 spec/plan。
   - Tests: Code/doc review; `rg -n "Web UI|PDF|HTML export|LLM-backed|benchmark" specs/002-live-provider-demo-readiness README.md traceresearch tests`
   - Related files: `specs/002-live-provider-demo-readiness/review.md`, `README.md`, `traceresearch/`
