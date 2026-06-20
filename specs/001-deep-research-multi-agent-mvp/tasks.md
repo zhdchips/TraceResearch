@@ -309,12 +309,12 @@ TASK LINE: - [ ] T001 [P] [US1] Description with file path
   - Tests: 检查 `eval/results/<eval_run_id>-summary.json` 存在并通过 JSON/schema validation。
   - Related files: `eval/results/`, `traceresearch/eval/runner.py`, `traceresearch/eval/metrics.py`
 
-- [ ] T049 P1: 运行 `$speckit-ai-eval-review-eval` and update eval artifact in `specs/001-deep-research-multi-agent-mvp/eval.md`
+- [X] T049 P1: 运行 `$speckit-ai-eval-review-eval` and update eval artifact in `specs/001-deep-research-multi-agent-mvp/eval.md`
   - DoD: 使用真实扩展 skill `$speckit-ai-eval-review-eval` 总结 tests/eval 命令、metrics、failed cases、bad-case root cause 和 recommended review focus。
   - Tests: `eval.md` Latest Result 更新，且引用最新 `eval/results/` 文件。
   - Related files: `specs/001-deep-research-multi-agent-mvp/eval.md`, `.agents/skills/speckit-ai-eval-review-eval/SKILL.md`, `eval/results/`
 
-- [ ] T050 P1: 运行 `$speckit-ai-eval-review-review` and create review artifact in `specs/001-deep-research-multi-agent-mvp/review.md`
+- [X] T050 P1: 运行 `$speckit-ai-eval-review-review` and create review artifact in `specs/001-deep-research-multi-agent-mvp/review.md`
   - DoD: 使用真实扩展 skill `$speckit-ai-eval-review-review` 生成 review，包含 `decision`、`next_phase`、findings、bad cases 和 next actions。
   - Tests: `review.md` 包含 Required Behavior 的 YAML decision block；若无 latest eval result，不得标记 complete。
   - Related files: `specs/001-deep-research-multi-agent-mvp/review.md`, `.agents/skills/speckit-ai-eval-review-review/SKILL.md`

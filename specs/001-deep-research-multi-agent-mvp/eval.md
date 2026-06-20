@@ -40,22 +40,55 @@ traceresearch eval --cases-dir eval/cases --source-provider fixture --results-di
 
 ## Latest Result
 
-当前 T040-T045 实现阶段先通过 pytest 覆盖 eval runner 和 metrics 行为。Durable result 写入 `eval/results/<eval_run_id>-summary.json` 的命令已经在 CLI 中提供；正式保存最新 eval summary 将在 T048/T049 运行完整 eval/review workflow 时执行。
+Latest eval result:
+
+- `result_file`: `eval/results/eval-20260620091948-58965334-summary.json`
+- `eval_run_id`: `eval-20260620091948-58965334`
+- `command`: `traceresearch eval --cases-dir eval/cases --source-provider fixture --results-dir eval/results`
+- `test_command`: `python3 -m pytest`
+- `test_result`: `71 passed`
+- `case_count`: `5`
+- `case_pass_rate`: `1.0`
+- `failed_case_ids`: `[]`
+- `bad_case_notes`: `[]`
+- `suggested_next_phase`: `complete`
+
+Metric summary from latest result:
+
+| Metric | Value | Pass/Fail Interpretation |
+| --- | ---: | --- |
+| `planner_coverage` | `1.0` | PASS，5 个 seed cases 的 expected perspectives 均被 `Planner` 覆盖。 |
+| `perspective_diversity` | `1.0` | PASS，每个 passing case 至少包含 3 个 distinct perspectives。 |
+| `source_relevance` | `0.912` | PASS，fixture evidence 与 task/query 相关性充足。 |
+| `source_authority` | `0.848` | PASS，fixture source authority 达到 MVP threshold。 |
+| `citation_completeness` | `1.0` | PASS，final report key claims 均包含 evidence IDs。 |
+| `faithfulness` | `1.0` | PASS，claims 的 evidence IDs 均可映射到 verified evidence，且无 unsupported final claims。 |
+| `unsupported_claim_count` | `0.0` | PASS，没有 unsupported claims 进入 final report。 |
+| `critical_hallucination_count` | `0.0` | PASS，没有 critical hallucination。 |
+| `case_pass_rate` | `1.0` | PASS，5/5 seed cases 通过。 |
 
 ## Bad Cases
 
-当前 bad-case 记录策略：
+Latest eval 未发现 failing case：
+
+- `failed_case_ids`: `[]`
+- `bad_case_notes`: `[]`
+- Suspected root causes: 无当前阻塞 root cause。已有 synthetic tests 覆盖 missing evidence、unsupported claims、planner coverage failure，并确认这些路径会写入 `bad_case_notes`。
+
+保留的 bad-case 观察机制：
 
 - case-level `passed=false` 时写入 `bad_case_notes`。
-- missing verified evidence 会标记为 faithfulness failure。
+- missing verified evidence 会标记为 `faithfulness` failure。
 - unsupported claims 会同时提高 `unsupported_claim_count` 与 `critical_hallucination_count`。
 - planner perspective gap 会标记 `planner_coverage` failure，并建议回到 `eval` phase 继续分析 case 或 planner 行为。
 
 ## Next Review Focus
 
-下一轮 review 应重点检查：
+当前 iteration 推荐进入 final review，并以 `$speckit-ai-eval-review-review` 判断是否 complete。
 
-- `EvalRunner` 的 `bad_case_notes` 是否足够定位 root cause。
-- `case_pass_rate` 和 per-metric pass/fail 是否能支撑 `$speckit-ai-eval-review-review` 的 `decision`。
-- 后续 live web provider 接入后，`source_relevance` / `source_authority` 是否仍稳定。
-- `Trace` 是否能解释每个 failed case 的 Planner、Researcher、Verifier、Critic、Writer 责任边界。
+下一阶段如果开启新 feature，review focus 建议放在：
+
+- live web provider 接入后，`source_relevance` / `source_authority` 是否仍稳定。
+- model-backed `Planner` / `Writer` 替换 deterministic implementation 后，`Faithfulness` 和 `Citation Completeness` 是否保持 1.0。
+- `Trace` 在真实 tool latency、provider failure、partial evidence gap 下是否足够支持 bad-case replay。
+- `Critic` 对 weak source、conflicting evidence、over-strong conclusion 的拦截能力是否需要更细粒度 metrics。
