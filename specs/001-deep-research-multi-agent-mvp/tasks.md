@@ -132,7 +132,7 @@ TASK LINE: - [ ] T001 [P] [US1] Description with file path
   - Tests: 覆盖 5 个 seed cases 的 search/fetch、无 source、source_id 不存在。
   - Related files: `traceresearch/source_discovery/fixture_provider.py`, `tests/unit/test_fixture_provider.py`
 
-- [ ] T022 [P] P1: 实现 WebSearchProviderStub in `traceresearch/source_discovery/web_stub.py`
+- [X] T022 [P] P1: 实现 WebSearchProviderStub in `traceresearch/source_discovery/web_stub.py`
   - DoD: 选择 `web` provider 且未配置时返回 `provider_not_configured`，写入 Trace error，不 fallback 到 fixture。
   - Tests: 覆盖 not-configured error、Trace error event、CLI failed status。
   - Related files: `traceresearch/source_discovery/web_stub.py`, `tests/unit/test_web_stub.py`
