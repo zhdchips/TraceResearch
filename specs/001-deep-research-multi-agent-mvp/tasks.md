@@ -47,32 +47,32 @@ TASK LINE: - [ ] T001 [P] [US1] Description with file path
 
 **Purpose**: 完成所有 User Story 都依赖的 schema、artifact、provider、Trace 和 seed eval 基础。
 
-- [ ] T005 P0: 实现 domain schemas in `traceresearch/evidence/models.py`
+- [X] T005 P0: 实现 domain schemas in `traceresearch/evidence/models.py`
   - DoD: 定义 `ResearchRun`、`ResearchBrief`、`ResearchTask`、`SourceResult`、`SourceDocument`、`Evidence`、`Claim`、`VerificationResult`、`CritiqueResult`、`EvalCase`、`EvalResult`，字段与 `data-model.md` 对齐。
   - Tests: 新增 schema validation tests，覆盖 required fields、enum、score 范围和 unsupported claim 规则。
   - Related files: `traceresearch/evidence/models.py`, `tests/unit/test_models.py`, `specs/001-deep-research-multi-agent-mvp/data-model.md`
 
-- [ ] T006 [P] P0: 实现 Trace schema in `traceresearch/trace/models.py`
+- [X] T006 [P] P0: 实现 Trace schema in `traceresearch/trace/models.py`
   - DoD: 定义 `TraceEvent`，包含 `trace_id`、`run_id`、`task_id`、`agent_role`、`event_type`、`tool_name`、`input_summary`、`output_summary`、`status`、`latency_ms`、`token_usage`、`error`、`created_at`。
   - Tests: 覆盖 failed event 必须有 `error.message`，每个 enum value 可序列化。
   - Related files: `traceresearch/trace/models.py`, `tests/unit/test_trace_models.py`
 
-- [ ] T007 P0: 实现 artifact path manager in `traceresearch/harness/artifacts.py`
+- [X] T007 P0: 实现 artifact path manager in `traceresearch/harness/artifacts.py`
   - DoD: 能基于 `run_id` 创建 `runs/<run_id>/`，返回所有 required artifact paths，并阻止 path traversal。
   - Tests: 覆盖 run directory creation、required filenames、重复调用幂等。
   - Related files: `traceresearch/harness/artifacts.py`, `tests/unit/test_artifacts.py`, `specs/001-deep-research-multi-agent-mvp/contracts/artifact-contract.md`
 
-- [ ] T008 P0: 实现 JSONL Trace writer in `traceresearch/trace/writer.py`
+- [X] T008 P0: 实现 JSONL Trace writer in `traceresearch/trace/writer.py`
   - DoD: 支持 append `TraceEvent` 到 `trace.jsonl`，并能读回 events；失败写入必须保留 error summary。
   - Tests: 覆盖 start/finish/error 写入、JSONL 逐行可解析、事件顺序保持。
   - Related files: `traceresearch/trace/writer.py`, `tests/unit/test_trace_writer.py`
 
-- [ ] T009 P0: 实现 Evidence Store read/write/dedupe in `traceresearch/evidence/store.py`
+- [X] T009 P0: 实现 Evidence Store read/write/dedupe in `traceresearch/evidence/store.py`
   - DoD: 支持写入 `evidence.jsonl`、按 `evidence_id` 查找、按 source dedupe、更新 status 和 verification notes。
   - Tests: 覆盖 JSONL read/write、URL dedupe、fixture title dedupe、verified/rejected status。
   - Related files: `traceresearch/evidence/store.py`, `tests/unit/test_evidence_store.py`
 
-- [ ] T010 P0: 定义 SourceDiscoveryProvider base contract in `traceresearch/source_discovery/base.py`
+- [X] T010 P0: 定义 SourceDiscoveryProvider base contract in `traceresearch/source_discovery/base.py`
   - DoD: 定义 `search(task, limit)` 和 `fetch(source_ref)` provider interface，返回 `SourceResult[]` / `SourceDocument`，错误类型包含 `provider_not_configured`。
   - Tests: Contract test 验证 fixture/web providers 必须实现 search/fetch。
   - Related files: `traceresearch/source_discovery/base.py`, `tests/unit/test_source_provider_contract.py`, `specs/001-deep-research-multi-agent-mvp/contracts/source-provider-contract.md`
