@@ -68,6 +68,30 @@ class RuntimeState:
 RunContext = RuntimeState
 
 
+def _resolve_llm_mode(agent: Any) -> tuple[str | None, str | None]:
+    """Detect whether an agent instance is LLM-backed via its _provider attribute.
+
+    Returns (llm_mode, llm_model) suitable for trace event fields.
+    - If the instance has ``_provider`` with a ``model`` attribute → ("llm", model).
+    - Otherwise → ("deterministic", None).
+
+    This works for direct-injected LLMWriter / LLMVerifier regardless of any
+    mode string passed separately.
+    """
+    provider = getattr(agent, "_provider", None)
+    if provider is not None and hasattr(provider, "model"):
+        return ("llm", str(provider.model))
+    return ("deterministic", None)
+
+
+def _resolve_llm_token_usage(agent: Any) -> Any | None:
+    """Return ``last_token_usage`` from an LLM-backed agent, or None."""
+    try:
+        return agent._provider.last_token_usage
+    except AttributeError:
+        return None
+
+
 class LeadAgentRuntime:
     """Unified runtime that orchestrates the research pipeline as discrete steps.
 
@@ -76,6 +100,9 @@ class LeadAgentRuntime:
     2. Delegates to the appropriate internal agent (Planner, LeadResearchAgent, etc.)
     3. Records LEAD_RUNTIME TOOL_RESULT/FINISH trace events
     4. Updates RuntimeState with results
+
+    On internal agent exception, records LEAD_RUNTIME FINISH with status=FAILED
+    and ErrorInfo, then re-raises the original exception.
 
     Usage::
 
@@ -123,36 +150,50 @@ class LeadAgentRuntime:
                          input_summary="calling Planner.plan",
                          output_summary=f"query={query[:80]}")
 
-        # Record PLANNER events (preserving existing trace contract)
-        self._trace_agent(AgentRole.PLANNER, EventType.START, query, "planning")
-        brief = self._planner.plan(run_id=self.state.run_id, query=query, eval_case=eval_case)
-        self._trace_agent(
-            AgentRole.PLANNER, EventType.FINISH,
-            "research question",
-            f"created {len(brief.research_tasks)} research tasks",
-            status=TraceStatus.NEEDS_CLARIFICATION if brief.open_clarifications else TraceStatus.SUCCESS,
-        )
+        try:
+            # Record PLANNER events (preserving existing trace contract)
+            self._trace_agent(AgentRole.PLANNER, EventType.START, query, "planning")
+            brief = self._planner.plan(run_id=self.state.run_id, query=query, eval_case=eval_case)
+            self._trace_agent(
+                AgentRole.PLANNER, EventType.FINISH,
+                "research question",
+                f"created {len(brief.research_tasks)} research tasks",
+                status=TraceStatus.NEEDS_CLARIFICATION if brief.open_clarifications else TraceStatus.SUCCESS,
+            )
 
-        self.state.research_brief = brief
-        self.state.planned_tasks = list(brief.research_tasks)
+            self.state.research_brief = brief
+            self.state.planned_tasks = list(brief.research_tasks)
 
-        if brief.open_clarifications:
-            self.state.status = "needs_clarification"
+            if brief.open_clarifications:
+                self.state.status = "needs_clarification"
+                self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
+                                 input_summary="Planner returned",
+                                 output_summary="needs clarification")
+                self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
+                                 input_summary="plan_research complete",
+                                 output_summary="needs_clarification",
+                                 status=TraceStatus.NEEDS_CLARIFICATION)
+            else:
+                self.state.status = "planned"
+                self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
+                                 input_summary="Planner returned",
+                                 output_summary=f"created {len(brief.research_tasks)} research tasks")
+                self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
+                                 input_summary="plan_research complete",
+                                 output_summary=f"{len(brief.research_tasks)} tasks planned")
+
+        except Exception as exc:
             self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
-                             input_summary="Planner returned",
-                             output_summary="needs clarification")
+                             input_summary="Planner failed",
+                             output_summary=str(exc),
+                             status=TraceStatus.FAILED,
+                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
             self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
-                             input_summary="plan_research complete",
-                             output_summary="needs_clarification",
-                             status=TraceStatus.NEEDS_CLARIFICATION)
-        else:
-            self.state.status = "planned"
-            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
-                             input_summary="Planner returned",
-                             output_summary=f"created {len(brief.research_tasks)} research tasks")
-            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
-                             input_summary="plan_research complete",
-                             output_summary=f"{len(brief.research_tasks)} tasks planned")
+                             input_summary="plan_research failed",
+                             output_summary=str(exc),
+                             status=TraceStatus.FAILED,
+                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+            raise
 
         return self.state
 
@@ -165,6 +206,10 @@ class LeadAgentRuntime:
 
         MUST call LeadResearchAgent.conduct_research() — does NOT reimplement
         subagent dispatch, concurrency, dedup, or evidence store writing.
+
+        When all research tasks fail (zero evidence despite having tasks),
+        records FINISH with status=FAILED so the trace reflects the failure
+        rather than showing SUCCESS followed by a post-hoc status change.
         """
         step = "run_research_subagents"
         self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.START,
@@ -175,36 +220,75 @@ class LeadAgentRuntime:
                          input_summary="calling LeadResearchAgent.conduct_research",
                          output_summary=f"provider={provider.provider_name}")
 
-        # Record RESEARCHER events (preserving existing trace contract)
-        self._trace_agent(AgentRole.RESEARCHER, EventType.START,
-                          "research tasks", "source discovery via subagent executor")
+        try:
+            # Record RESEARCHER events (preserving existing trace contract)
+            self._trace_agent(AgentRole.RESEARCHER, EventType.START,
+                              "research tasks", "source discovery via subagent executor")
 
-        research_result = self._lead_researcher.conduct_research(
-            brief=self.state.research_brief,
-            provider=provider,
-            run_id=self.state.run_id,
-            run_dir=self.state.run_dir,
-            trace_writer=self.state.trace_writer,
-            provider_tool_name=provider_tool_name,
-        )
+            research_result = self._lead_researcher.conduct_research(
+                brief=self.state.research_brief,
+                provider=provider,
+                run_id=self.state.run_id,
+                run_dir=self.state.run_dir,
+                trace_writer=self.state.trace_writer,
+                provider_tool_name=provider_tool_name,
+            )
 
-        self.state.evidence = list(research_result.evidence)
-        self.state.failed_task_ids = list(research_result.failed_task_ids)
+            self.state.evidence = list(research_result.evidence)
+            self.state.failed_task_ids = list(research_result.failed_task_ids)
 
-        self._trace_agent(
-            AgentRole.RESEARCHER, EventType.FINISH,
-            f"{provider.provider_name} provider results",
-            f"stored {len(self.state.evidence)} evidence candidates",
-        )
+            self._trace_agent(
+                AgentRole.RESEARCHER, EventType.FINISH,
+                f"{provider.provider_name} provider results",
+                f"stored {len(self.state.evidence)} evidence candidates",
+            )
 
-        self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
-                         input_summary="LeadResearchAgent returned",
-                         output_summary=f"evidence={len(self.state.evidence)} failed={len(self.state.failed_task_ids)}")
+            # Detect all-tasks-failed: tasks existed but zero evidence collected.
+            _all_failed = (
+                self.state.research_brief is not None
+                and bool(self.state.research_brief.research_tasks)
+                and not self.state.evidence
+            )
 
-        self.state.status = "researched"
-        self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
-                         input_summary="run_research_subagents complete",
-                         output_summary=f"evidence={len(self.state.evidence)} tasks_failed={len(self.state.failed_task_ids)}")
+            if _all_failed:
+                self.state.status = "failed"
+                self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
+                                 input_summary="LeadResearchAgent returned — all tasks failed",
+                                 output_summary=f"evidence=0 failed={len(self.state.failed_task_ids)}",
+                                 status=TraceStatus.FAILED,
+                                 error=ErrorInfo(
+                                     type="AllResearchTasksFailed",
+                                     message="All research tasks failed or timed out — no evidence collected",
+                                 ))
+                self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
+                                 input_summary="run_research_subagents failed",
+                                 output_summary="all research tasks failed",
+                                 status=TraceStatus.FAILED,
+                                 error=ErrorInfo(
+                                     type="AllResearchTasksFailed",
+                                     message="All research tasks failed or timed out — no evidence collected",
+                                 ))
+            else:
+                self.state.status = "researched"
+                self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
+                                 input_summary="LeadResearchAgent returned",
+                                 output_summary=f"evidence={len(self.state.evidence)} failed={len(self.state.failed_task_ids)}")
+                self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
+                                 input_summary="run_research_subagents complete",
+                                 output_summary=f"evidence={len(self.state.evidence)} tasks_failed={len(self.state.failed_task_ids)}")
+
+        except Exception as exc:
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
+                             input_summary="LeadResearchAgent failed",
+                             output_summary=str(exc),
+                             status=TraceStatus.FAILED,
+                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
+                             input_summary="run_research_subagents failed",
+                             output_summary=str(exc),
+                             status=TraceStatus.FAILED,
+                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+            raise
 
         return self.state
 
@@ -222,23 +306,37 @@ class LeadAgentRuntime:
                          input_summary="calling Writer.draft",
                          output_summary=f"evidence_count={len(self.state.evidence)}")
 
-        # Record WRITER events
-        self._trace_agent(AgentRole.WRITER, EventType.START,
-                          "evidence candidates", "drafting outline and claims")
-        draft = self._writer.draft(brief=self.state.research_brief, evidence=self.state.evidence)
-        self._trace_agent(AgentRole.WRITER, EventType.FINISH,
-                          "outline and draft claims",
-                          f"drafted {len(draft.claims)} claims")
+        try:
+            # Record WRITER events
+            self._trace_agent(AgentRole.WRITER, EventType.START,
+                              "evidence candidates", "drafting outline and claims")
+            draft = self._writer.draft(brief=self.state.research_brief, evidence=self.state.evidence)
+            self._trace_agent(AgentRole.WRITER, EventType.FINISH,
+                              "outline and draft claims",
+                              f"drafted {len(draft.claims)} claims")
 
-        self.state.draft_report = draft
-        self.state.status = "drafted"
+            self.state.draft_report = draft
+            self.state.status = "drafted"
 
-        self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
-                         input_summary="Writer returned draft",
-                         output_summary=f"claims={len(draft.claims)}")
-        self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
-                         input_summary="write_report complete",
-                         output_summary=f"drafted {len(draft.claims)} claims")
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
+                             input_summary="Writer returned draft",
+                             output_summary=f"claims={len(draft.claims)}")
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
+                             input_summary="write_report complete",
+                             output_summary=f"drafted {len(draft.claims)} claims")
+
+        except Exception as exc:
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
+                             input_summary="Writer.draft failed",
+                             output_summary=str(exc),
+                             status=TraceStatus.FAILED,
+                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
+                             input_summary="write_report failed",
+                             output_summary=str(exc),
+                             status=TraceStatus.FAILED,
+                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+            raise
 
         return self.state
 
@@ -248,6 +346,12 @@ class LeadAgentRuntime:
 
         Delegates to Verifier.verify(). Updates EvidenceStore statuses for
         verified evidence items.
+
+        The *writer_mode* and *verifier_mode* parameters are retained for
+        backward compatibility.  LLM observability is inferred directly from
+        the verifier instance (``hasattr(verifier, '_provider')``), so a
+        direct-injected LLMVerifier is always traced as llm regardless of
+        the mode string.
         """
         step = "verify_report"
         self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.START,
@@ -258,56 +362,64 @@ class LeadAgentRuntime:
                          input_summary="calling Verifier.verify",
                          output_summary=f"claims={len(self.state.draft_report.claims)}")
 
-        # LLM mode detection for trace
-        _verifier_is_llm = hasattr(self._verifier, '_provider') and verifier_mode == "llm"
-        _verifier_llm_mode = "llm" if _verifier_is_llm else "deterministic"
-        _verifier_llm_model = getattr(self._verifier, '_provider', None)
-        if _verifier_llm_model is not None and hasattr(_verifier_llm_model, 'model'):
-            _verifier_llm_model = _verifier_llm_model.model
-        else:
-            _verifier_llm_model = None
+        # LLM mode detection — instance-based, works for direct injection.
+        _verifier_llm_mode, _verifier_llm_model = _resolve_llm_mode(self._verifier)
 
-        self._trace_agent(
-            AgentRole.VERIFIER, EventType.START,
-            "draft claims", "verifying claim support",
-            llm_mode=_verifier_llm_mode, llm_model=_verifier_llm_model,
-        )
-        verification = self._verifier.verify(
-            run_id=self.state.run_id,
-            draft=self.state.draft_report,
-            evidence=self.state.evidence,
-        )
-        self._trace_agent(
-            AgentRole.VERIFIER, EventType.FINISH,
-            "draft claims",
-            f"verified {len(verification.claim_results)} claims",
-            llm_mode=_verifier_llm_mode, llm_model=_verifier_llm_model,
-        )
-
-        # Update EvidenceStore statuses for verified evidence
-        evidence_path = f"{self.state.run_dir}/evidence.jsonl"
-        evidence_store = EvidenceStore(evidence_path)
-        verified_ids = {
-            evidence_id
-            for claim in verification.claim_results
-            for evidence_id in claim.evidence_ids
-        }
-        for evidence_id in verified_ids:
-            evidence_store.update_status(
-                evidence_id,
-                EvidenceStatus.VERIFIED,
-                ["Verified by verifier."],
+        try:
+            self._trace_agent(
+                AgentRole.VERIFIER, EventType.START,
+                "draft claims", "verifying claim support",
+                llm_mode=_verifier_llm_mode, llm_model=_verifier_llm_model,
+            )
+            verification = self._verifier.verify(
+                run_id=self.state.run_id,
+                draft=self.state.draft_report,
+                evidence=self.state.evidence,
+            )
+            self._trace_agent(
+                AgentRole.VERIFIER, EventType.FINISH,
+                "draft claims",
+                f"verified {len(verification.claim_results)} claims",
+                llm_mode=_verifier_llm_mode, llm_model=_verifier_llm_model,
             )
 
-        self.state.verification_result = verification
-        self.state.status = "verified"
+            # Update EvidenceStore statuses for verified evidence
+            evidence_path = f"{self.state.run_dir}/evidence.jsonl"
+            evidence_store = EvidenceStore(evidence_path)
+            verified_ids = {
+                evidence_id
+                for claim in verification.claim_results
+                for evidence_id in claim.evidence_ids
+            }
+            for evidence_id in verified_ids:
+                evidence_store.update_status(
+                    evidence_id,
+                    EvidenceStatus.VERIFIED,
+                    ["Verified by verifier."],
+                )
 
-        self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
-                         input_summary="Verifier returned",
-                         output_summary=f"verified {len(verification.claim_results)} claims")
-        self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
-                         input_summary="verify_report complete",
-                         output_summary=f"claims_verified={len(verification.claim_results)}")
+            self.state.verification_result = verification
+            self.state.status = "verified"
+
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
+                             input_summary="Verifier returned",
+                             output_summary=f"verified {len(verification.claim_results)} claims")
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
+                             input_summary="verify_report complete",
+                             output_summary=f"claims_verified={len(verification.claim_results)}")
+
+        except Exception as exc:
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
+                             input_summary="Verifier.verify failed",
+                             output_summary=str(exc),
+                             status=TraceStatus.FAILED,
+                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
+                             input_summary="verify_report failed",
+                             output_summary=str(exc),
+                             status=TraceStatus.FAILED,
+                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+            raise
 
         return self.state
 
@@ -321,39 +433,53 @@ class LeadAgentRuntime:
                          input_summary="starting critique",
                          output_summary="reviewing coverage and quality")
 
-        # Build verified evidence list
-        evidence_path = f"{self.state.run_dir}/evidence.jsonl"
-        evidence_store = EvidenceStore(evidence_path)
-        verified_evidence = [
-            item for item in evidence_store.list_all()
-            if item.status == EvidenceStatus.VERIFIED
-        ]
+        try:
+            # Build verified evidence list
+            evidence_path = f"{self.state.run_dir}/evidence.jsonl"
+            evidence_store = EvidenceStore(evidence_path)
+            verified_evidence = [
+                item for item in evidence_store.list_all()
+                if item.status == EvidenceStatus.VERIFIED
+            ]
 
-        self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_CALL,
-                         input_summary="calling Critic.review",
-                         output_summary=f"verified_evidence={len(verified_evidence)}")
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_CALL,
+                             input_summary="calling Critic.review",
+                             output_summary=f"verified_evidence={len(verified_evidence)}")
 
-        self._trace_agent(AgentRole.CRITIC, EventType.START,
-                          "verified claims", "reviewing coverage")
-        critique = self._critic.review(
-            brief=self.state.research_brief,
-            evidence=verified_evidence,
-            verification=self.state.verification_result,
-            failed_task_ids=self.state.failed_task_ids,
-        )
-        self._trace_agent(AgentRole.CRITIC, EventType.FINISH,
-                          "coverage review",
-                          f"decision={critique.decision.value}")
+            self._trace_agent(AgentRole.CRITIC, EventType.START,
+                              "verified claims", "reviewing coverage")
+            critique = self._critic.review(
+                brief=self.state.research_brief,
+                evidence=verified_evidence,
+                verification=self.state.verification_result,
+                failed_task_ids=self.state.failed_task_ids,
+            )
+            self._trace_agent(AgentRole.CRITIC, EventType.FINISH,
+                              "coverage review",
+                              f"decision={critique.decision.value}")
 
-        self.state.critique_result = critique
-        self.state.status = "critiqued"
+            self.state.critique_result = critique
+            self.state.status = "critiqued"
 
-        self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
-                         input_summary="Critic returned",
-                         output_summary=f"decision={critique.decision.value}")
-        self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
-                         input_summary="critique_report complete",
-                         output_summary=f"decision={critique.decision.value}")
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
+                             input_summary="Critic returned",
+                             output_summary=f"decision={critique.decision.value}")
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
+                             input_summary="critique_report complete",
+                             output_summary=f"decision={critique.decision.value}")
+
+        except Exception as exc:
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
+                             input_summary="Critic.review failed",
+                             output_summary=str(exc),
+                             status=TraceStatus.FAILED,
+                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
+                             input_summary="critique_report failed",
+                             output_summary=str(exc),
+                             status=TraceStatus.FAILED,
+                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+            raise
 
         return self.state
 
@@ -361,67 +487,75 @@ class LeadAgentRuntime:
         """Step 6: Finalize report — produce final markdown and JSON output.
 
         Delegates to Writer.final().
+
+        The *writer_mode* parameter is retained for backward compatibility.
+        LLM observability is inferred directly from the writer instance
+        (``hasattr(writer, '_provider')``), so a direct-injected LLMWriter is
+        always traced as llm regardless of the mode string.
         """
         step = "finalize_run"
         self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.START,
                          input_summary="starting finalize",
                          output_summary="producing final report")
 
-        # Build verified evidence list
-        evidence_path = f"{self.state.run_dir}/evidence.jsonl"
-        evidence_store = EvidenceStore(evidence_path)
-        verified_evidence = [
-            item for item in evidence_store.list_all()
-            if item.status == EvidenceStatus.VERIFIED
-        ]
+        # LLM mode detection — instance-based, works for direct injection.
+        _writer_llm_mode, _writer_llm_model = _resolve_llm_mode(self._writer)
 
-        # LLM mode detection for trace
-        _writer_is_llm = hasattr(self._writer, '_provider') and writer_mode == "llm"
-        _writer_llm_mode = "llm" if _writer_is_llm else "deterministic"
-        _writer_llm_model = getattr(self._writer, '_provider', None)
-        if _writer_llm_model is not None and hasattr(_writer_llm_model, 'model'):
-            _writer_llm_model = _writer_llm_model.model
-        else:
-            _writer_llm_model = None
+        try:
+            # Build verified evidence list
+            evidence_path = f"{self.state.run_dir}/evidence.jsonl"
+            evidence_store = EvidenceStore(evidence_path)
+            verified_evidence = [
+                item for item in evidence_store.list_all()
+                if item.status == EvidenceStatus.VERIFIED
+            ]
 
-        self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_CALL,
-                         input_summary="calling Writer.final",
-                         output_summary=f"verified_evidence={len(verified_evidence)}")
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_CALL,
+                             input_summary="calling Writer.final",
+                             output_summary=f"verified_evidence={len(verified_evidence)}")
 
-        self._trace_agent(
-            AgentRole.WRITER, EventType.START,
-            "verified evidence", "writing final report",
-            llm_mode=_writer_llm_mode, llm_model=_writer_llm_model,
-        )
-        final_report = self._writer.final(
-            brief=self.state.research_brief,
-            verified_evidence=verified_evidence,
-            verification=self.state.verification_result,
-            critique=self.state.critique_result,
-        )
-        # Record LLM token usage if available
-        _writer_llm_usage = None
-        if _writer_is_llm:
-            try:
-                _writer_llm_usage = self._writer._provider.last_token_usage
-            except AttributeError:
-                pass
-        self._trace_agent(
-            AgentRole.WRITER, EventType.FINISH,
-            "final report", "wrote final_report.md and report.json",
-            llm_mode=_writer_llm_mode, llm_model=_writer_llm_model,
-            llm_token_usage=_writer_llm_usage,
-        )
+            self._trace_agent(
+                AgentRole.WRITER, EventType.START,
+                "verified evidence", "writing final report",
+                llm_mode=_writer_llm_mode, llm_model=_writer_llm_model,
+            )
+            final_report = self._writer.final(
+                brief=self.state.research_brief,
+                verified_evidence=verified_evidence,
+                verification=self.state.verification_result,
+                critique=self.state.critique_result,
+            )
+            # Record LLM token usage if available
+            _writer_llm_usage = _resolve_llm_token_usage(self._writer)
+            self._trace_agent(
+                AgentRole.WRITER, EventType.FINISH,
+                "final report", "wrote final_report.md and report.json",
+                llm_mode=_writer_llm_mode, llm_model=_writer_llm_model,
+                llm_token_usage=_writer_llm_usage,
+            )
 
-        self.state.final_report = final_report
-        self.state.status = "completed"
+            self.state.final_report = final_report
+            self.state.status = "completed"
 
-        self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
-                         input_summary="Writer returned final report",
-                         output_summary="final report ready")
-        self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
-                         input_summary="finalize_run complete",
-                         output_summary="final report written")
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
+                             input_summary="Writer returned final report",
+                             output_summary="final report ready")
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
+                             input_summary="finalize_run complete",
+                             output_summary="final report written")
+
+        except Exception as exc:
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_RESULT,
+                             input_summary="Writer.final failed",
+                             output_summary=str(exc),
+                             status=TraceStatus.FAILED,
+                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
+                             input_summary="finalize_run failed",
+                             output_summary=str(exc),
+                             status=TraceStatus.FAILED,
+                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+            raise
 
         return self.state
 
@@ -451,10 +585,10 @@ class LeadAgentRuntime:
         if self.state.research_brief and self.state.research_brief.open_clarifications:
             return self.state
 
-        # Step 2: Research
+        # Step 2: Research (all-tasks-failed sets state.status="failed" and
+        # records FAILED trace inside run_research_subagents).
         self.run_research_subagents(provider, provider_tool_name)
-        if self.state.research_brief and self.state.research_brief.research_tasks and not self.state.evidence:
-            self.state.status = "failed"
+        if self.state.status == "failed":
             return self.state
 
         # Step 3: Write

@@ -270,11 +270,11 @@ class TestPlanResearch:
 # ---------------------------------------------------------------------------
 
 class TestRunResearchSubagents:
-    def test_calls_lead_researcher(self, runtime_state, sample_brief):
+    def test_calls_lead_researcher(self, runtime_state, sample_brief, sample_evidence):
         runtime_state.research_brief = sample_brief
         mock_lead = MagicMock()
         mock_lead.conduct_research.return_value = MagicMock(
-            evidence=[], failed_task_ids=[],
+            evidence=sample_evidence, failed_task_ids=[],
         )
         mock_provider = MagicMock()
         mock_provider.provider_name = "fixture"
@@ -775,3 +775,366 @@ class TestAgentRoleRegression:
         assert AgentRole.WRITER == "Writer"
         assert AgentRole.EVAL_RUNNER == "EvalRunner"
         assert AgentRole.HARNESS == "Harness"
+
+
+# ---------------------------------------------------------------------------
+# Failure trace tests — each step must record FAILED FINISH on exception
+# ---------------------------------------------------------------------------
+
+class TestStepFailureTrace:
+    """When an internal agent raises, the step must record TOOL_RESULT + FINISH
+    with status=FAILED and ErrorInfo, then re-raise the original exception."""
+
+    def test_plan_research_failure_trace(self, runtime_state, tmp_trace_writer):
+        mock_planner = MagicMock(spec=Planner)
+        mock_planner.plan.side_effect = ValueError("bad query")
+
+        runtime = LeadAgentRuntime(state=runtime_state, planner=mock_planner)
+        with pytest.raises(ValueError, match="bad query"):
+            runtime.plan_research("test query")
+
+        events = tmp_trace_writer.read_all()
+        lead_events = [e for e in events if e.agent_role == AgentRole.LEAD_RUNTIME]
+
+        # START + TOOL_CALL + TOOL_RESULT(FAILED) + FINISH(FAILED) = 4
+        assert len(lead_events) == 4
+        # FINISH should be last and FAILED
+        finish = lead_events[-1]
+        assert finish.event_type == EventType.FINISH
+        assert finish.status == TraceStatus.FAILED
+        assert finish.error is not None
+        assert finish.error.type == "ValueError"
+        assert "bad query" in finish.error.message
+
+    def test_run_research_subagents_failure_trace(self, runtime_state, sample_brief, tmp_trace_writer):
+        runtime_state.research_brief = sample_brief
+        mock_lead = MagicMock()
+        mock_lead.conduct_research.side_effect = RuntimeError("provider down")
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "fixture"
+
+        runtime = LeadAgentRuntime(state=runtime_state, lead_researcher=mock_lead)
+        with pytest.raises(RuntimeError, match="provider down"):
+            runtime.run_research_subagents(mock_provider)
+
+        events = tmp_trace_writer.read_all()
+        lead_events = [e for e in events if e.agent_role == AgentRole.LEAD_RUNTIME]
+
+        assert len(lead_events) == 4
+        finish = lead_events[-1]
+        assert finish.event_type == EventType.FINISH
+        assert finish.status == TraceStatus.FAILED
+        assert finish.error is not None
+        assert finish.error.type == "RuntimeError"
+
+    def test_write_report_failure_trace(self, runtime_state, sample_brief, sample_evidence, tmp_trace_writer):
+        runtime_state.research_brief = sample_brief
+        runtime_state.evidence = sample_evidence
+        mock_writer = MagicMock(spec=WriterProtocol)
+        mock_writer.draft.side_effect = RuntimeError("draft failed")
+
+        runtime = LeadAgentRuntime(state=runtime_state, writer=mock_writer)
+        with pytest.raises(RuntimeError, match="draft failed"):
+            runtime.write_report()
+
+        events = tmp_trace_writer.read_all()
+        lead_events = [e for e in events if e.agent_role == AgentRole.LEAD_RUNTIME]
+
+        assert len(lead_events) == 4
+        finish = lead_events[-1]
+        assert finish.event_type == EventType.FINISH
+        assert finish.status == TraceStatus.FAILED
+        assert finish.error.type == "RuntimeError"
+
+    def test_verify_report_failure_trace(self, runtime_state, sample_brief, sample_evidence, tmp_path, tmp_trace_writer):
+        run_dir = tmp_path / "test-run"
+        run_dir.mkdir()
+        runtime_state.run_dir = str(run_dir)
+        runtime_state.research_brief = sample_brief
+        runtime_state.evidence = sample_evidence
+        mock_draft = MagicMock()
+        mock_draft.claims = []
+        runtime_state.draft_report = mock_draft
+
+        mock_verifier = MagicMock(spec=VerifierProtocol)
+        mock_verifier.verify.side_effect = RuntimeError("verify failed")
+
+        runtime = LeadAgentRuntime(state=runtime_state, verifier=mock_verifier)
+        with pytest.raises(RuntimeError, match="verify failed"):
+            runtime.verify_report()
+
+        events = tmp_trace_writer.read_all()
+        lead_events = [e for e in events if e.agent_role == AgentRole.LEAD_RUNTIME]
+
+        assert len(lead_events) == 4
+        finish = lead_events[-1]
+        assert finish.event_type == EventType.FINISH
+        assert finish.status == TraceStatus.FAILED
+        assert finish.error.type == "RuntimeError"
+
+    def test_critique_report_failure_trace(self, runtime_state, sample_brief, sample_evidence, tmp_path, tmp_trace_writer):
+        run_dir = tmp_path / "test-run"
+        run_dir.mkdir()
+        runtime_state.run_dir = str(run_dir)
+        runtime_state.research_brief = sample_brief
+        runtime_state.evidence = sample_evidence
+        mock_verification = MagicMock()
+        mock_verification.claim_results = []
+        runtime_state.verification_result = mock_verification
+
+        mock_critic = MagicMock(spec=Critic)
+        mock_critic.review.side_effect = RuntimeError("critique failed")
+
+        runtime = LeadAgentRuntime(state=runtime_state, critic=mock_critic)
+        with pytest.raises(RuntimeError, match="critique failed"):
+            runtime.critique_report()
+
+        events = tmp_trace_writer.read_all()
+        lead_events = [e for e in events if e.agent_role == AgentRole.LEAD_RUNTIME]
+
+        assert len(lead_events) == 4
+        finish = lead_events[-1]
+        assert finish.event_type == EventType.FINISH
+        assert finish.status == TraceStatus.FAILED
+        assert finish.error.type == "RuntimeError"
+
+    def test_finalize_run_failure_trace(self, runtime_state, sample_brief, sample_evidence, tmp_path, tmp_trace_writer):
+        run_dir = tmp_path / "test-run"
+        run_dir.mkdir()
+        runtime_state.run_dir = str(run_dir)
+        runtime_state.research_brief = sample_brief
+        runtime_state.evidence = sample_evidence
+        mock_verification = MagicMock()
+        runtime_state.verification_result = mock_verification
+        mock_critique = MagicMock()
+        runtime_state.critique_result = mock_critique
+
+        mock_writer = MagicMock(spec=WriterProtocol)
+        mock_writer.final.side_effect = RuntimeError("final failed")
+
+        runtime = LeadAgentRuntime(state=runtime_state, writer=mock_writer)
+        with pytest.raises(RuntimeError, match="final failed"):
+            runtime.finalize_run()
+
+        events = tmp_trace_writer.read_all()
+        lead_events = [e for e in events if e.agent_role == AgentRole.LEAD_RUNTIME]
+
+        assert len(lead_events) == 4
+        finish = lead_events[-1]
+        assert finish.event_type == EventType.FINISH
+        assert finish.status == TraceStatus.FAILED
+        assert finish.error.type == "RuntimeError"
+
+
+# ---------------------------------------------------------------------------
+# All-tasks-failed trace — run_research_subagents records FAILED internally
+# ---------------------------------------------------------------------------
+
+class TestAllTasksFailedTrace:
+    def test_run_research_subagents_finish_failed_when_all_tasks_fail(
+        self, runtime_state, sample_brief, tmp_trace_writer
+    ):
+        """When all tasks fail, run_research_subagents records FINISH with FAILED."""
+        runtime_state.research_brief = sample_brief
+        mock_lead = MagicMock()
+        mock_lead.conduct_research.return_value = MagicMock(
+            evidence=[], failed_task_ids=["T-001", "T-002"],
+        )
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "fixture"
+
+        runtime = LeadAgentRuntime(state=runtime_state, lead_researcher=mock_lead)
+        result = runtime.run_research_subagents(mock_provider)
+
+        assert result.status == "failed"
+
+        events = tmp_trace_writer.read_all()
+        lead_events = [e for e in events if e.agent_role == AgentRole.LEAD_RUNTIME]
+
+        # 4 events: START, TOOL_CALL, TOOL_RESULT(FAILED), FINISH(FAILED)
+        assert len(lead_events) == 4
+        finish = lead_events[-1]
+        assert finish.event_type == EventType.FINISH
+        assert finish.status == TraceStatus.FAILED
+        assert finish.error is not None
+        assert finish.error.type == "AllResearchTasksFailed"
+
+    def test_run_pipeline_early_return_all_failed_has_failed_trace(
+        self, runtime_state, sample_brief, tmp_trace_writer
+    ):
+        """run_pipeline early return on all-failed must have FAILED in trace."""
+        mock_planner = MagicMock(spec=Planner)
+        mock_planner.plan.return_value = sample_brief
+
+        mock_lead = MagicMock()
+        mock_lead.conduct_research.return_value = MagicMock(
+            evidence=[], failed_task_ids=["T-001", "T-002"],
+        )
+
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "fixture"
+
+        runtime = LeadAgentRuntime(
+            state=runtime_state,
+            planner=mock_planner,
+            lead_researcher=mock_lead,
+        )
+
+        result = runtime.run_pipeline("test query", mock_provider)
+        assert result.status == "failed"
+
+        events = tmp_trace_writer.read_all()
+        # Find run_research_subagents FINISH
+        research_finishes = [
+            e for e in events
+            if e.agent_role == AgentRole.LEAD_RUNTIME
+            and e.tool_name == "run_research_subagents"
+            and e.event_type == EventType.FINISH
+        ]
+        assert len(research_finishes) == 1
+        assert research_finishes[0].status == TraceStatus.FAILED
+
+
+# ---------------------------------------------------------------------------
+# LLM observability — instance-based detection via _resolve_llm_mode
+# ---------------------------------------------------------------------------
+
+class TestLLMModeDetection:
+    """LLM mode is detected from instance attributes, not string mode params."""
+
+    def test_deterministic_writer_detected_as_deterministic(self):
+        from traceresearch.agents.lead_runtime import _resolve_llm_mode
+        from traceresearch.agents.writer import Writer
+
+        mode, model = _resolve_llm_mode(Writer())
+        assert mode == "deterministic"
+        assert model is None
+
+    def test_deterministic_verifier_detected_as_deterministic(self):
+        from traceresearch.agents.lead_runtime import _resolve_llm_mode
+        from traceresearch.agents.verifier import Verifier
+
+        mode, model = _resolve_llm_mode(Verifier())
+        assert mode == "deterministic"
+        assert model is None
+
+    def test_llm_writer_detected_as_llm(self):
+        from traceresearch.agents.lead_runtime import _resolve_llm_mode
+        from traceresearch.agents.llm_writer import LLMWriter
+
+        mock_provider = MagicMock()
+        mock_provider.model = "deepseek-chat"
+        llm_writer = LLMWriter(provider=mock_provider)
+
+        mode, model = _resolve_llm_mode(llm_writer)
+        assert mode == "llm"
+        assert model == "deepseek-chat"
+
+    def test_llm_verifier_detected_as_llm(self):
+        from traceresearch.agents.lead_runtime import _resolve_llm_mode
+        from traceresearch.agents.llm_verifier import LLMVerifier
+
+        mock_provider = MagicMock()
+        mock_provider.model = "deepseek-chat"
+        llm_verifier = LLMVerifier(provider=mock_provider)
+
+        mode, model = _resolve_llm_mode(llm_verifier)
+        assert mode == "llm"
+        assert model == "deepseek-chat"
+
+    def test_verify_report_traces_llm_when_direct_injected(self, runtime_state, sample_brief, sample_evidence, tmp_path, tmp_trace_writer):
+        """Direct-injected LLMVerifier must be traced as llm regardless of mode string."""
+        from traceresearch.agents.llm_verifier import LLMVerifier
+
+        run_dir = tmp_path / "test-run"
+        run_dir.mkdir()
+        runtime_state.run_dir = str(run_dir)
+        runtime_state.research_brief = sample_brief
+        runtime_state.evidence = sample_evidence
+        mock_draft = MagicMock()
+        mock_draft.claims = []
+        runtime_state.draft_report = mock_draft
+
+        mock_provider = MagicMock()
+        mock_provider.model = "deepseek-chat"
+        llm_verifier = LLMVerifier(provider=mock_provider)
+        mock_verification = MagicMock()
+        mock_verification.claim_results = []
+        llm_verifier.verify = MagicMock(return_value=mock_verification)
+
+        runtime = LeadAgentRuntime(state=runtime_state, verifier=llm_verifier)
+        # Pass deterministic mode string — instance detection should override
+        runtime.verify_report(verifier_mode="deterministic")
+
+        events = tmp_trace_writer.read_all()
+        verifier_start = [e for e in events
+                          if e.agent_role == AgentRole.VERIFIER
+                          and e.event_type == EventType.START]
+        assert len(verifier_start) == 1
+        assert verifier_start[0].llm_mode == "llm"
+        assert verifier_start[0].llm_model == "deepseek-chat"
+
+    def test_finalize_run_traces_llm_when_direct_injected(self, runtime_state, sample_brief, sample_evidence, tmp_path, tmp_trace_writer):
+        """Direct-injected LLMWriter must be traced as llm regardless of mode string."""
+        from traceresearch.agents.llm_writer import LLMWriter
+
+        run_dir = tmp_path / "test-run"
+        run_dir.mkdir()
+        runtime_state.run_dir = str(run_dir)
+        runtime_state.research_brief = sample_brief
+        runtime_state.evidence = sample_evidence
+        mock_verification = MagicMock()
+        runtime_state.verification_result = mock_verification
+        mock_critique = MagicMock()
+        runtime_state.critique_result = mock_critique
+
+        mock_provider = MagicMock()
+        mock_provider.model = "deepseek-chat"
+        mock_provider.last_token_usage = None  # avoid MagicMock leaking into Pydantic
+        llm_writer = LLMWriter(provider=mock_provider)
+        mock_final = MagicMock()
+        llm_writer.final = MagicMock(return_value=mock_final)
+
+        runtime = LeadAgentRuntime(state=runtime_state, writer=llm_writer)
+        runtime.finalize_run(writer_mode="deterministic")
+
+        events = tmp_trace_writer.read_all()
+        writer_start = [e for e in events
+                        if e.agent_role == AgentRole.WRITER
+                        and e.event_type == EventType.START
+                        and e.tool_name is None]  # the WRITER START inside finalize_run
+        assert len(writer_start) >= 1
+        assert writer_start[0].llm_mode == "llm"
+        assert writer_start[0].llm_model == "deepseek-chat"
+
+
+# ---------------------------------------------------------------------------
+# Package exports — verify 004+005 types are importable from traceresearch.agents
+# ---------------------------------------------------------------------------
+
+class TestPackageExports:
+    def test_005_types_importable(self):
+        from traceresearch.agents import LeadAgentRuntime, RuntimeState, RunContext
+        assert LeadAgentRuntime is not None
+        assert RuntimeState is not None
+        assert RunContext is RuntimeState
+
+    def test_004_types_importable(self):
+        from traceresearch.agents import (
+            LeadResearchAgent,
+            ResearchTaskAgent,
+            SubagentExecutor,
+        )
+        assert LeadResearchAgent is not None
+        assert ResearchTaskAgent is not None
+        assert SubagentExecutor is not None
+
+    def test_004_model_types_importable(self):
+        from traceresearch.agents import (
+            CandidateEvidenceBatch,
+            CompressedResearchContext,
+            SubagentStatus,
+        )
+        assert CandidateEvidenceBatch is not None
+        assert CompressedResearchContext is not None
+        assert SubagentStatus is not None
