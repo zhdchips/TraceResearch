@@ -23,6 +23,7 @@ class AgentRole(StrEnum):
     EVAL_RUNNER = "EvalRunner"
     HARNESS = "Harness"
     LEAD_RUNTIME = "LeadRuntime"
+    LANGGRAPH = "LangGraph"
 
 
 class EventType(StrEnum):

@@ -45,9 +45,12 @@ logger = logging.getLogger(__name__)
 
 
 def _read_lead_agent_mode() -> str:
-    """Read TRACERESEARCH_LEAD_AGENT_MODE from env, default 'runtime'."""
+    """Read TRACERESEARCH_LEAD_AGENT_MODE from env, default 'runtime'.
+
+    Valid modes: runtime, tool_controller, langgraph (009).
+    """
     value = os.environ.get("TRACERESEARCH_LEAD_AGENT_MODE", "runtime")
-    if value not in ("runtime", "tool_controller"):
+    if value not in ("runtime", "tool_controller", "langgraph"):
         logger.warning(
             "TRACERESEARCH_LEAD_AGENT_MODE=%r unknown, falling back to 'runtime'",
             value,

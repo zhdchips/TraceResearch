@@ -87,4 +87,5 @@ def test_all_agent_roles_are_available() -> None:
         "EvalRunner",
         "Harness",
         "LeadRuntime",
+        "LangGraph",
     }
