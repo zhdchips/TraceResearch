@@ -22,6 +22,7 @@ class AgentRole(StrEnum):
     WRITER = "Writer"
     EVAL_RUNNER = "EvalRunner"
     HARNESS = "Harness"
+    LEAD_RUNTIME = "LeadRuntime"
 
 
 class EventType(StrEnum):

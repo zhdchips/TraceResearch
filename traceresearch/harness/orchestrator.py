@@ -1,4 +1,9 @@
-"""Serial Agent Harness for TraceResearch MVP runs."""
+"""Serial Agent Harness for TraceResearch MVP runs.
+
+The harness is now a thin wrapper that constructs RuntimeState + LeadAgentRuntime
+and delegates pipeline orchestration to the runtime. HARNESS-level trace events,
+artifact file writing, and RunResult construction remain here.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +15,7 @@ from uuid import uuid4
 
 from traceresearch.agents.critic import Critic
 from traceresearch.agents.lead_researcher import LeadResearchAgent
+from traceresearch.agents.lead_runtime import LeadAgentRuntime, RuntimeState
 from traceresearch.agents.llm_verifier import LLMVerifier
 from traceresearch.agents.llm_writer import LLMWriter
 from traceresearch.agents.planner import Planner
@@ -17,7 +23,6 @@ from traceresearch.agents.researcher import Researcher
 from traceresearch.agents.verifier_protocol import VerifierProtocol
 from traceresearch.agents.writer_protocol import WriterProtocol
 from traceresearch.evidence.models import (
-    Evidence,
     EvidenceStatus,
     ResearchRun,
     ResearchRunStatus,
@@ -80,6 +85,9 @@ class ResearchHarness:
         else:
             self.verifier = build_verifier(mode=verifier_mode, llm_provider=llm_provider)
 
+        self.writer_mode = writer_mode
+        self.verifier_mode = verifier_mode
+
     def run(
         self,
         *,
@@ -124,6 +132,7 @@ class ResearchHarness:
         eval_case,
         case_id: str | None,
     ) -> RunResult:
+        # --- Setup: artifacts, trace, state, runtime ---
         artifacts = RunArtifacts.create(output_dir, run_id)
         trace = _TraceRecorder(run_id=run_id, writer=TraceWriter(artifacts.trace))
         evidence_store = EvidenceStore(artifacts.evidence)
@@ -136,18 +145,25 @@ class ResearchHarness:
             f"case_id={case_id or 'none'}; source_provider={provider.provider_name}",
         )
 
-        trace.record(AgentRole.PLANNER, EventType.START, query, "planning")
-        brief = self.planner.plan(run_id=run_id, query=query, eval_case=eval_case)
-        _write_json(artifacts.research_brief, brief.model_dump(mode="json"))
-        trace.record(
-            AgentRole.PLANNER,
-            EventType.FINISH,
-            "research question",
-            f"created {len(brief.research_tasks)} research tasks",
-            status=TraceStatus.NEEDS_CLARIFICATION
-            if brief.open_clarifications
-            else TraceStatus.SUCCESS,
+        state = RuntimeState(
+            run_id=run_id,
+            run_dir=str(artifacts.run_dir),
+            trace_writer=trace.writer,
         )
+
+        runtime = LeadAgentRuntime(
+            state=state,
+            planner=self.planner,
+            lead_researcher=self.lead_researcher,
+            writer=self.writer,
+            verifier=self.verifier,
+            critic=self.critic,
+        )
+
+        # --- Step 1: Plan ---
+        runtime.plan_research(query, eval_case)
+        brief = state.research_brief
+        _write_json(artifacts.research_brief, brief.model_dump(mode="json"))
 
         if brief.open_clarifications:
             trace.record(
@@ -169,33 +185,11 @@ class ResearchHarness:
             [task.model_dump(mode="json") for task in brief.research_tasks],
         )
 
-        trace.record(
-            AgentRole.RESEARCHER,
-            EventType.START,
-            "research tasks",
-            "source discovery via subagent executor",
-        )
-        research_result = self.lead_researcher.conduct_research(
-            brief=brief,
-            provider=provider,
-            run_id=run_id,
-            run_dir=artifacts.run_dir,
-            trace_writer=trace.writer,
-            provider_tool_name=provider_tool_name,
-        )
-        stored_evidence: list[Evidence] = research_result.evidence
-        failed_task_ids: list[str] = research_result.failed_task_ids
-        trace.record(
-            AgentRole.RESEARCHER,
-            EventType.FINISH,
-            f"{provider.provider_name} provider results",
-            f"stored {len(stored_evidence)} evidence candidates",
-        )
+        # --- Step 2: Research ---
+        runtime.run_research_subagents(provider, provider_tool_name)
 
-        # All-failure detection: if tasks existed but no evidence was collected,
-        # treat as a failed run (partial failure policy still allows 0-evidence
-        # but the run should surface the failure).
-        if brief.research_tasks and not stored_evidence:
+        # All-failure detection
+        if brief.research_tasks and not state.evidence:
             trace.record(
                 AgentRole.HARNESS,
                 EventType.FINISH,
@@ -221,122 +215,30 @@ class ResearchHarness:
             f"evidence.jsonl contains {len(evidence_store.list_all())} rows",
         )
 
-        trace.record(
-            AgentRole.WRITER,
-            EventType.START,
-            "evidence candidates",
-            "drafting outline and claims",
-        )
-        draft = self.writer.draft(brief=brief, evidence=stored_evidence)
+        # --- Step 3: Write (draft) ---
+        runtime.write_report()
+        draft = state.draft_report
         artifacts.outline.write_text(draft.outline_markdown, encoding="utf-8")
         artifacts.draft_report.write_text(draft.draft_markdown, encoding="utf-8")
-        trace.record(
-            AgentRole.WRITER,
-            EventType.FINISH,
-            "outline and draft claims",
-            f"drafted {len(draft.claims)} claims",
-        )
 
-        _verifier_is_llm = isinstance(self.verifier, LLMVerifier)
-        _verifier_llm_mode = "llm" if _verifier_is_llm else "deterministic"
-        _verifier_llm_model = (
-            self.verifier._provider.model if _verifier_is_llm else None  # type: ignore[union-attr]
+        # --- Step 4: Verify ---
+        runtime.verify_report(
+            writer_mode=self.writer_mode,
+            verifier_mode=self.verifier_mode,
         )
-        trace.record(
-            AgentRole.VERIFIER,
-            EventType.START,
-            "draft claims",
-            "verifying claim support",
-            llm_mode=_verifier_llm_mode,
-            llm_model=_verifier_llm_model,
-        )
-        verification = self.verifier.verify(
-            run_id=run_id,
-            draft=draft,
-            evidence=stored_evidence,
-        )
-        _write_json(artifacts.verification, verification.model_dump(mode="json"))
-        verified_ids = {
-            evidence_id
-            for claim in verification.claim_results
-            for evidence_id in claim.evidence_ids
-        }
-        for evidence_id in verified_ids:
-            evidence_store.update_status(
-                evidence_id,
-                EvidenceStatus.VERIFIED,
-                ["Verified by deterministic fixture verifier."],
-            )
-        verified_evidence = [
-            item for item in evidence_store.list_all() if item.status == EvidenceStatus.VERIFIED
-        ]
-        trace.record(
-            AgentRole.VERIFIER,
-            EventType.FINISH,
-            "draft claims",
-            f"verified {len(verification.claim_results)} claims",
-            llm_mode=_verifier_llm_mode,
-            llm_model=_verifier_llm_model,
-        )
+        _write_json(artifacts.verification, state.verification_result.model_dump(mode="json"))
 
-        trace.record(
-            AgentRole.CRITIC,
-            EventType.START,
-            "verified claims",
-            "reviewing coverage",
-        )
-        critique = self.critic.review(
-            brief=brief,
-            evidence=verified_evidence,
-            verification=verification,
-            failed_task_ids=failed_task_ids,
-        )
-        _write_json(artifacts.critique, critique.model_dump(mode="json"))
-        trace.record(
-            AgentRole.CRITIC,
-            EventType.FINISH,
-            "coverage review",
-            f"decision={critique.decision.value}",
-        )
+        # --- Step 5: Critique ---
+        runtime.critique_report()
+        _write_json(artifacts.critique, state.critique_result.model_dump(mode="json"))
 
-        _writer_is_llm = isinstance(self.writer, LLMWriter)
-        _writer_llm_mode = "llm" if _writer_is_llm else "deterministic"
-        _writer_llm_model = (
-            self.writer._provider.model if _writer_is_llm else None  # type: ignore[union-attr]
-        )
-        trace.record(
-            AgentRole.WRITER,
-            EventType.START,
-            "verified evidence",
-            "writing final report",
-            llm_mode=_writer_llm_mode,
-            llm_model=_writer_llm_model,
-        )
-        final_report = self.writer.final(
-            brief=brief,
-            verified_evidence=verified_evidence,
-            verification=verification,
-            critique=critique,
-        )
-        # Record LLM token usage if available
-        _writer_llm_usage = None
-        if _writer_is_llm:
-            try:
-                _writer_llm_usage = self.writer._provider.last_token_usage  # type: ignore[union-attr]
-            except AttributeError:
-                pass
+        # --- Step 6: Finalize ---
+        runtime.finalize_run(writer_mode=self.writer_mode)
+        final_report = state.final_report
         artifacts.final_report.write_text(final_report.markdown, encoding="utf-8")
         _write_json(artifacts.report_json, final_report.report_json)
-        trace.record(
-            AgentRole.WRITER,
-            EventType.FINISH,
-            "final report",
-            "wrote final_report.md and report.json",
-            llm_mode=_writer_llm_mode,
-            llm_model=_writer_llm_model,
-            llm_token_usage=_writer_llm_usage,
-        )
 
+        # --- Wrap up ---
         run = ResearchRun(
             run_id=run_id,
             input_query=query,

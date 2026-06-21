@@ -86,4 +86,5 @@ def test_all_agent_roles_are_available() -> None:
         "Writer",
         "EvalRunner",
         "Harness",
+        "LeadRuntime",
     }
