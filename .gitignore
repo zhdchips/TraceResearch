@@ -28,6 +28,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Spec Kit integration cache
+.specify/integrations/.cache/
+
 # Local run artifacts
 runs/*
 !runs/.gitkeep
