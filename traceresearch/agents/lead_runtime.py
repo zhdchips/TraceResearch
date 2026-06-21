@@ -13,9 +13,13 @@ Design constraints (005):
 
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from traceresearch.agents.critic import Critic
 from traceresearch.agents.lead_researcher import LeadResearchAgent
@@ -62,10 +66,36 @@ class RuntimeState:
     critique_result: Any = None
     final_report: Any = None
     status: str = "initialized"
+    # Iteration fields (006)
+    iteration_index: int = 0
+    max_iterations: int = 1
+    iteration_history: list[dict] = field(default_factory=list)
+    revision_reason: str | None = None
+    next_phase: str | None = None
+    # Context engineering (007)
+    latest_context_pack: Any = None  # ContextPack | None
 
 
 # RunContext is an alias for code that prefers the "context" naming.
 RunContext = RuntimeState
+
+
+def _read_max_iterations() -> int:
+    """Read TRACERESEARCH_MAX_RUNTIME_ITERATIONS from env, default 1."""
+    raw = os.environ.get("TRACERESEARCH_MAX_RUNTIME_ITERATIONS", "1")
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(
+            "TRACERESEARCH_MAX_RUNTIME_ITERATIONS=%r is not an integer, using 1", raw
+        )
+        return 1
+    if value < 1:
+        logger.warning(
+            "TRACERESEARCH_MAX_RUNTIME_ITERATIONS=%d < 1, using 1", value
+        )
+        return 1
+    return value
 
 
 def _resolve_llm_mode(agent: Any) -> tuple[str | None, str | None]:
@@ -591,13 +621,22 @@ class LeadAgentRuntime:
         writer_mode: str = "deterministic",
         verifier_mode: str = "deterministic",
     ) -> RuntimeState:
-        """Run the full research pipeline: plan → research → write → verify → critique → finalize.
+        """Run the full research pipeline with bounded iteration (006).
 
-        Returns early if plan_research produces open_clarifications (NEEDS_CLARIFICATION).
-        Returns early if all research tasks fail (state.status = "failed").
+        Plan → Research → [Write → Verify → Critique]×N → Finalize
 
-        Returns the final RuntimeState for the harness to construct RunResult.
+        The Critique→Revise loop iterates up to max_iterations.
+        On PASS → finalize and exit.
+        On REVISE → loop back based on next_phase (research/write/verify).
+        On FAIL → finalize and exit.
+        Unsupported next_phase → warn + finalize.
+
+        Returns early for NEEDS_CLARIFICATION or all-tasks-failed.
         """
+        # Resolve max_iterations: state value takes priority, env var as fallback
+        if self.state.max_iterations == 1:
+            self.state.max_iterations = _read_max_iterations()
+
         # Step 1: Plan
         self.plan_research(query, eval_case)
         if self.state.research_brief and self.state.research_brief.open_clarifications:
@@ -609,14 +648,128 @@ class LeadAgentRuntime:
         if self.state.status == "failed":
             return self.state
 
-        # Step 3: Write
-        self.write_report()
+        # Step 3-5: Iterative write → verify → critique loop
+        from traceresearch.evidence.models import CritiqueDecision, NextPhase
 
-        # Step 4: Verify
-        self.verify_report(writer_mode=writer_mode, verifier_mode=verifier_mode)
+        while self.state.iteration_index < self.state.max_iterations:
+            self.state.iteration_index += 1
+            it = self.state.iteration_index
 
-        # Step 5: Critique
-        self.critique_report()
+            self._trace_iteration(
+                EventType.START,
+                f"iteration {it} starting",
+                next_phase=self.state.next_phase or "write",
+            )
+
+            # Write (skip if looping back to verify only)
+            if self.state.next_phase != "verify":
+                self.write_report()
+
+            # Verify
+            self.verify_report(writer_mode=writer_mode, verifier_mode=verifier_mode)
+
+            # Critique
+            self.critique_report()
+
+            critique = self.state.critique_result
+            decision = critique.decision
+
+            self._trace_iteration(
+                EventType.TOOL_RESULT,
+                f"critic decision: {decision.value}",
+                decision=decision.value,
+                next_phase=str(critique.next_phase.value) if critique.next_phase else None,
+                revision_reason=(
+                    "; ".join(critique.missing_perspectives)
+                    if critique.missing_perspectives else None
+                ),
+            )
+
+            # Record iteration history
+            self.state.iteration_history.append({
+                "iteration_index": it,
+                "decision": decision.value,
+                "next_phase": str(critique.next_phase.value) if critique.next_phase else None,
+                "revision_reason": (
+                    "; ".join(critique.missing_perspectives)
+                    if critique.missing_perspectives else None
+                ),
+            })
+
+            if decision == CritiqueDecision.PASS:
+                self._trace_iteration(
+                    EventType.FINISH,
+                    f"iteration {it} complete — PASS",
+                    decision="PASS",
+                )
+                break
+
+            if decision == CritiqueDecision.FAIL:
+                self._trace_iteration(
+                    EventType.FINISH,
+                    f"iteration {it} complete — FAIL, finalizing",
+                    decision="FAIL",
+                )
+                break
+
+            # REVISE: check if we have more iterations
+            if it >= self.state.max_iterations:
+                self._trace_iteration(
+                    EventType.FINISH,
+                    f"iteration {it} — max_iterations reached, finalizing",
+                    decision="REVISE",
+                    status=TraceStatus.SKIPPED,
+                )
+                break
+
+            # Set up next iteration
+            self.state.revision_reason = (
+                "; ".join(critique.missing_perspectives)
+                if critique.missing_perspectives else "revision requested"
+            )
+            next_phase_val = critique.next_phase
+            self.state.next_phase = str(next_phase_val.value) if next_phase_val else None
+
+            # Route based on next_phase
+            if next_phase_val == NextPhase.RESEARCH:
+                self._trace_iteration(
+                    EventType.FINISH,
+                    f"iteration {it} complete — REVISE, looping to research",
+                    decision="REVISE",
+                    next_phase="research",
+                )
+                self.run_research_subagents(provider, provider_tool_name)
+                self.state.next_phase = "write"  # reset for full pipeline re-run
+            elif next_phase_val == NextPhase.WRITE:
+                self._trace_iteration(
+                    EventType.FINISH,
+                    f"iteration {it} complete — REVISE, looping to write",
+                    decision="REVISE",
+                    next_phase="write",
+                )
+                # next_phase stays "write" — will re-enter from write_report
+            elif next_phase_val == NextPhase.VERIFY:
+                self._trace_iteration(
+                    EventType.FINISH,
+                    f"iteration {it} complete — REVISE, looping to verify",
+                    decision="REVISE",
+                    next_phase="verify",
+                )
+                # next_phase stays "verify" — will skip write_report
+            else:
+                # Unsupported next_phase — warn and finalize
+                logger.warning(
+                    "Unsupported next_phase=%r for REVISE — finalizing",
+                    self.state.next_phase,
+                )
+                self._trace_iteration(
+                    EventType.FINISH,
+                    f"iteration {it} — unsupported next_phase={self.state.next_phase}, finalizing",
+                    decision="REVISE",
+                    next_phase=self.state.next_phase,
+                    status=TraceStatus.SKIPPED,
+                )
+                break
 
         # Step 6: Finalize
         self.finalize_run(writer_mode=writer_mode)
@@ -689,6 +842,42 @@ class LeadAgentRuntime:
             llm_model=llm_model,
             llm_token_usage=llm_token_usage,
             failover_reason=failover_reason,
+            created_at=datetime.now(timezone.utc),
+        )
+        self.state.trace_writer.append(event)
+
+    def _trace_iteration(
+        self,
+        event_type: EventType,
+        output_summary: str,
+        *,
+        decision: str | None = None,
+        next_phase: str | None = None,
+        revision_reason: str | None = None,
+        status: TraceStatus = TraceStatus.SUCCESS,
+    ) -> None:
+        """Record an iteration lifecycle event (006)."""
+        if self.state.trace_writer is None:
+            return
+        detail_parts = [f"iter={self.state.iteration_index}"]
+        if decision:
+            detail_parts.append(f"decision={decision}")
+        if next_phase:
+            detail_parts.append(f"next_phase={next_phase}")
+        if revision_reason:
+            detail_parts.append(
+                f"revision_reason={revision_reason[:120]}"
+            )
+        event = TraceEvent(
+            trace_id=self.state.trace_writer.next_trace_id(self.state.run_id),
+            run_id=self.state.run_id,
+            agent_role=AgentRole.LEAD_RUNTIME,
+            event_type=event_type,
+            tool_name="iteration_loop",
+            input_summary=", ".join(detail_parts),
+            output_summary=output_summary,
+            status=status,
+            latency_ms=0,
             created_at=datetime.now(timezone.utc),
         )
         self.state.trace_writer.append(event)

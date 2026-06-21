@@ -696,25 +696,33 @@ class TestRunPipeline:
         events = tmp_trace_writer.read_all()
         lead_runtime_events = [e for e in events if e.agent_role == AgentRole.LEAD_RUNTIME]
 
-        # 6 steps × 4 events each = 24 LEAD_RUNTIME events
-        assert len(lead_runtime_events) == 24
+        # 6 steps × 4 events each = 24 + 3 iteration events (006) = 27
+        assert len(lead_runtime_events) == 27
 
         # Verify each step name appears
         step_names = {e.tool_name for e in lead_runtime_events}
         expected_steps = {
             "plan_research", "run_research_subagents", "write_report",
             "verify_report", "critique_report", "finalize_run",
+            "iteration_loop",  # 006
         }
         assert step_names == expected_steps
 
-        # Verify event types for each step
-        for step_name in expected_steps:
+        # Verify event types for each classic step
+        classic_steps = expected_steps - {"iteration_loop"}
+        for step_name in classic_steps:
             step_events = [e for e in lead_runtime_events if e.tool_name == step_name]
             event_types = [e.event_type for e in step_events]
             assert event_types == [
                 EventType.START, EventType.TOOL_CALL,
                 EventType.TOOL_RESULT, EventType.FINISH,
             ], f"Step {step_name} has wrong event types: {event_types}"
+
+        # Verify iteration_loop has START, TOOL_RESULT, FINISH (no TOOL_CALL)
+        iter_events = [e for e in lead_runtime_events if e.tool_name == "iteration_loop"]
+        assert len(iter_events) == 3
+        iter_types = [e.event_type for e in iter_events]
+        assert iter_types == [EventType.START, EventType.TOOL_RESULT, EventType.FINISH]
 
         # Verify internal agent events are also present
         planner_events = [e for e in events if e.agent_role == AgentRole.PLANNER]
