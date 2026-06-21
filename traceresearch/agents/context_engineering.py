@@ -153,9 +153,33 @@ def _estimate_chars(pack: ContextPack) -> int:
     return total
 
 
+def _estimate_evidence_chars(ev: EvidenceContext) -> int:
+    """Rough character count of a single EvidenceContext."""
+    total = len(ev.evidence_id)
+    total += len(ev.source_title)
+    total += len(ev.source_publisher or "")
+    total += len(ev.source_url or "")
+    total += len(ev.summary)
+    total += sum(len(kp) for kp in ev.key_points)
+    total += sum(len(lim) for lim in ev.limitations)
+    return total
+
+
 def _compress_evidence(evidence: list[Any], budget: ContextBudget) -> list[EvidenceContext]:
-    """Convert Evidence objects to EvidenceContext, respecting budget."""
+    """Convert Evidence objects to EvidenceContext, respecting budget.
+
+    Budget enforcement order:
+    1. Cap count to max_evidence_items.
+    2. Truncate each summary to max_chars_per_evidence.
+    3. Stop adding items once estimated total chars exceeds max_total_chars.
+    4. If even the first item exceeds max_total_chars, still keep it
+       (evidence_id must never be dropped), but aggressively truncate
+       key_points/limitations/summary to fit.
+    """
     compressed: list[EvidenceContext] = []
+
+    # Pre-compress each candidate
+    candidates: list[EvidenceContext] = []
     for item in evidence[: budget.max_evidence_items]:
         url_str = str(item.source.url) if getattr(item.source, "url", None) else None
         ctx = EvidenceContext(
@@ -167,7 +191,26 @@ def _compress_evidence(evidence: list[Any], budget: ContextBudget) -> list[Evide
             key_points=list(item.key_points)[:5],
             limitations=list(item.limitations)[:5],
         )
+        candidates.append(ctx)
+
+    # Enforce max_total_chars
+    running_chars = 0
+    for ctx in candidates:
+        item_chars = _estimate_evidence_chars(ctx)
+        if compressed and (running_chars + item_chars > budget.max_total_chars):
+            # Budget exceeded — stop adding more items (but never drop first)
+            break
+        if running_chars == 0 and item_chars > budget.max_total_chars and not compressed:
+            # First item alone exceeds budget — aggressively truncate
+            avail = budget.max_total_chars - len(ctx.evidence_id) - len(ctx.source_title) - len(ctx.source_publisher or "") - len(ctx.source_url or "")
+            # Reserve ~40 chars for structure overhead
+            avail = max(50, avail - 40)
+            ctx.summary = _truncate_text(ctx.summary, avail // 2)
+            ctx.key_points = []  # drop key_points under extreme budget
+            ctx.limitations = []  # drop limitations
         compressed.append(ctx)
+        running_chars += item_chars
+
     return compressed
 
 

@@ -3,11 +3,18 @@
 The harness is now a thin wrapper that constructs RuntimeState + LeadAgentRuntime
 and delegates pipeline orchestration to the runtime. HARNESS-level trace events,
 artifact file writing, and RunResult construction remain here.
+
+006 integration: write→verify→critique are wrapped in an iteration loop
+that respects TRACERESEARCH_MAX_RUNTIME_ITERATIONS (default 1).
+
+008 integration: when TRACERESEARCH_LEAD_AGENT_MODE=tool_controller,
+the harness delegates to LeadAgentToolController instead of the classic path.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,7 +22,8 @@ from uuid import uuid4
 
 from traceresearch.agents.critic import Critic
 from traceresearch.agents.lead_researcher import LeadResearchAgent
-from traceresearch.agents.lead_runtime import LeadAgentRuntime, RuntimeState
+from traceresearch.agents.lead_runtime import LeadAgentRuntime, RuntimeState, _read_max_iterations
+from traceresearch.agents.lead_tool_controller import LeadAgentToolController, _read_lead_agent_mode
 from traceresearch.agents.llm_verifier import LLMVerifier
 from traceresearch.agents.llm_writer import LLMWriter
 from traceresearch.agents.planner import Planner
@@ -23,7 +31,9 @@ from traceresearch.agents.researcher import Researcher
 from traceresearch.agents.verifier_protocol import VerifierProtocol
 from traceresearch.agents.writer_protocol import WriterProtocol
 from traceresearch.evidence.models import (
+    CritiqueDecision,
     EvidenceStatus,
+    NextPhase,
     ResearchRun,
     ResearchRunStatus,
 )
@@ -151,6 +161,9 @@ class ResearchHarness:
             trace_writer=trace.writer,
         )
 
+        # Resolve max_iterations from env var (006)
+        state.max_iterations = _read_max_iterations()
+
         runtime = LeadAgentRuntime(
             state=state,
             planner=self.planner,
@@ -159,6 +172,23 @@ class ResearchHarness:
             verifier=self.verifier,
             critic=self.critic,
         )
+
+        # --- Choose execution path (008) ---
+        lead_mode = _read_lead_agent_mode()
+        if lead_mode == "tool_controller":
+            return self._run_tool_controller_path(
+                runtime=runtime,
+                state=state,
+                query=query,
+                provider=provider,
+                provider_tool_name=provider_tool_name,
+                eval_case=eval_case,
+                artifacts=artifacts,
+                trace=trace,
+                evidence_store=evidence_store,
+            )
+
+        # --- Classic runtime path with iteration (006) ---
 
         # --- Step 1: Plan ---
         runtime.plan_research(query, eval_case)
@@ -188,7 +218,6 @@ class ResearchHarness:
         # --- Step 2: Research ---
         runtime.run_research_subagents(provider, provider_tool_name)
 
-        # All-failure detection
         if brief.research_tasks and not state.evidence:
             trace.record(
                 AgentRole.HARNESS,
@@ -215,22 +244,132 @@ class ResearchHarness:
             f"evidence.jsonl contains {len(evidence_store.list_all())} rows",
         )
 
-        # --- Step 3: Write (draft) ---
-        runtime.write_report()
-        draft = state.draft_report
-        artifacts.outline.write_text(draft.outline_markdown, encoding="utf-8")
-        artifacts.draft_report.write_text(draft.draft_markdown, encoding="utf-8")
+        # --- Steps 3-5: Iterative write → verify → critique (006) ---
+        iteration = 0
+        while iteration < state.max_iterations:
+            iteration += 1
 
-        # --- Step 4: Verify ---
-        runtime.verify_report(
-            writer_mode=self.writer_mode,
-            verifier_mode=self.verifier_mode,
-        )
-        _write_json(artifacts.verification, state.verification_result.model_dump(mode="json"))
+            # Trace iteration start
+            trace.record(
+                AgentRole.LEAD_RUNTIME,
+                EventType.START,
+                f"iter={iteration} next_phase={state.next_phase or 'write'}",
+                f"iteration {iteration} starting",
+                tool_name="iteration_loop",
+            )
 
-        # --- Step 5: Critique ---
-        runtime.critique_report()
-        _write_json(artifacts.critique, state.critique_result.model_dump(mode="json"))
+            # Write (skip if looping back to verify-only)
+            if state.next_phase != "verify":
+                runtime.write_report()
+                draft = state.draft_report
+                artifacts.outline.write_text(draft.outline_markdown, encoding="utf-8")
+                artifacts.draft_report.write_text(draft.draft_markdown, encoding="utf-8")
+
+            # Verify
+            runtime.verify_report(
+                writer_mode=self.writer_mode,
+                verifier_mode=self.verifier_mode,
+            )
+            _write_json(artifacts.verification, state.verification_result.model_dump(mode="json"))
+
+            # Critique
+            runtime.critique_report()
+            _write_json(artifacts.critique, state.critique_result.model_dump(mode="json"))
+
+            critique = state.critique_result
+            decision = critique.decision
+
+            # Record iteration
+            state.iteration_index = iteration
+            state.iteration_history.append({
+                "iteration_index": iteration,
+                "decision": decision.value,
+                "next_phase": str(critique.next_phase.value) if critique.next_phase else None,
+                "revision_reason": (
+                    "; ".join(critique.missing_perspectives)
+                    if critique.missing_perspectives else None
+                ),
+            })
+
+            # Trace iteration decision
+            trace.record(
+                AgentRole.LEAD_RUNTIME,
+                EventType.TOOL_RESULT,
+                f"iter={iteration} decision={decision.value} next_phase={str(critique.next_phase.value) if critique.next_phase else 'none'}",
+                f"critic decision: {decision.value}",
+                tool_name="iteration_loop",
+            )
+
+            if decision == CritiqueDecision.PASS:
+                trace.record(
+                    AgentRole.LEAD_RUNTIME,
+                    EventType.FINISH,
+                    f"iter={iteration} decision=pass",
+                    f"iteration {iteration} complete — PASS",
+                    tool_name="iteration_loop",
+                )
+                break
+            if decision == CritiqueDecision.FAIL:
+                trace.record(
+                    AgentRole.LEAD_RUNTIME,
+                    EventType.FINISH,
+                    f"iter={iteration} decision=fail",
+                    f"iteration {iteration} complete — FAIL, finalizing",
+                    tool_name="iteration_loop",
+                )
+                break
+
+            # REVISE — check iteration cap
+            if iteration >= state.max_iterations:
+                trace.record(
+                    AgentRole.LEAD_RUNTIME,
+                    EventType.FINISH,
+                    f"iter={iteration} decision=revise",
+                    f"iteration {iteration} — max_iterations reached, finalizing",
+                    tool_name="iteration_loop",
+                    status=TraceStatus.SKIPPED,
+                )
+                break
+
+            # Set up next iteration
+            state.revision_reason = (
+                "; ".join(critique.missing_perspectives)
+                if critique.missing_perspectives else "revision requested"
+            )
+            next_phase_val = critique.next_phase
+            state.next_phase = str(next_phase_val.value) if next_phase_val else None
+
+            # Route based on next_phase
+            if next_phase_val == NextPhase.RESEARCH:
+                trace.record(
+                    AgentRole.LEAD_RUNTIME,
+                    EventType.FINISH,
+                    f"iter={iteration} decision=revise next_phase=research",
+                    f"iteration {iteration} complete — REVISE, looping to research",
+                    tool_name="iteration_loop",
+                )
+                runtime.run_research_subagents(provider, provider_tool_name)
+                state.next_phase = "write"
+            elif next_phase_val in (NextPhase.WRITE, NextPhase.VERIFY):
+                trace.record(
+                    AgentRole.LEAD_RUNTIME,
+                    EventType.FINISH,
+                    f"iter={iteration} decision=revise next_phase={state.next_phase}",
+                    f"iteration {iteration} complete — REVISE, looping to {state.next_phase}",
+                    tool_name="iteration_loop",
+                )
+                # will re-enter loop correctly
+            else:
+                # Unsupported next_phase — break and finalize
+                trace.record(
+                    AgentRole.LEAD_RUNTIME,
+                    EventType.FINISH,
+                    f"iter={iteration} decision=revise next_phase={state.next_phase}",
+                    f"iteration {iteration} — unsupported next_phase={state.next_phase}, finalizing",
+                    tool_name="iteration_loop",
+                    status=TraceStatus.SKIPPED,
+                )
+                break
 
         # --- Step 6: Finalize ---
         runtime.finalize_run(writer_mode=self.writer_mode)
@@ -239,10 +378,107 @@ class ResearchHarness:
         _write_json(artifacts.report_json, final_report.report_json)
 
         # --- Wrap up ---
+        return self._wrap_up_run(
+            run_id=run_id,
+            query=query,
+            artifacts=artifacts,
+            trace=trace,
+            state=state,
+        )
+
+    def _run_tool_controller_path(
+        self,
+        *,
+        runtime: LeadAgentRuntime,
+        state: RuntimeState,
+        query: str,
+        provider: SourceDiscoveryProvider,
+        provider_tool_name: str | None,
+        eval_case,
+        artifacts: RunArtifacts,
+        trace: _TraceRecorder,
+        evidence_store,
+    ) -> RunResult:
+        """008: Run pipeline through the deterministic tool controller."""
+        trace.record(
+            AgentRole.HARNESS,
+            EventType.TOOL_CALL,
+            "tool_controller path",
+            f"lead_agent_mode=tool_controller max_iterations={state.max_iterations}",
+        )
+
+        controller = LeadAgentToolController(
+            runtime=runtime,
+            state=state,
+            max_steps=state.max_iterations * 6 + 6,  # generous margin
+        )
+
+        # Run the tool loop
+        state = controller.run_tool_loop(
+            query=query,
+            provider=provider,
+            eval_case=eval_case,
+            provider_tool_name=provider_tool_name,
+            writer_mode=self.writer_mode,
+            verifier_mode=self.verifier_mode,
+        )
+
+        # Write artifacts from state (same contract as classic path)
+        if state.research_brief:
+            _write_json(artifacts.research_brief, state.research_brief.model_dump(mode="json"))
+            _write_json(
+                artifacts.research_tasks,
+                [task.model_dump(mode="json") for task in state.planned_tasks],
+            )
+
+        if state.draft_report:
+            artifacts.outline.write_text(
+                getattr(state.draft_report, "outline_markdown", ""), encoding="utf-8",
+            )
+            artifacts.draft_report.write_text(
+                getattr(state.draft_report, "draft_markdown", ""), encoding="utf-8",
+            )
+
+        if state.verification_result:
+            _write_json(artifacts.verification, state.verification_result.model_dump(mode="json"))
+
+        if state.critique_result:
+            _write_json(artifacts.critique, state.critique_result.model_dump(mode="json"))
+
+        if state.final_report:
+            artifacts.final_report.write_text(state.final_report.markdown, encoding="utf-8")
+            _write_json(artifacts.report_json, state.final_report.report_json)
+
+        return self._wrap_up_run(
+            run_id=state.run_id,
+            query=query,
+            artifacts=artifacts,
+            trace=trace,
+            state=state,
+        )
+
+    def _wrap_up_run(
+        self,
+        *,
+        run_id: str,
+        query: str,
+        artifacts: RunArtifacts,
+        trace: _TraceRecorder,
+        state: RuntimeState,
+    ) -> RunResult:
+        """Common run finalization: trace + RunResult construction."""
+        # Determine status
+        if state.status == "needs_clarification":
+            run_status = ResearchRunStatus.NEEDS_CLARIFICATION
+        elif state.status == "failed":
+            run_status = ResearchRunStatus.FAILED
+        else:
+            run_status = ResearchRunStatus.COMPLETED
+
         run = ResearchRun(
             run_id=run_id,
             input_query=query,
-            status=ResearchRunStatus.COMPLETED,
+            status=run_status,
             created_at=datetime.now(timezone.utc),
             completed_at=datetime.now(timezone.utc),
             artifact_dir=str(artifacts.run_dir),

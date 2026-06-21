@@ -90,6 +90,7 @@ class LeadAgentToolController:
         self.state = state
         self.max_steps = max_steps
         self._step_count = 0
+        self._iteration_count = 0  # critique cycles completed
         self._execution_log: list[ToolCallRecord] = []
 
     # ------------------------------------------------------------------
@@ -137,6 +138,13 @@ class LeadAgentToolController:
             if decision == CritiqueDecision.PASS:
                 return "finalize_run"
             if decision == CritiqueDecision.REVISE:
+                # If max_iterations reached, force finalize
+                if self._iteration_count >= self.state.max_iterations:
+                    logger.info(
+                        "max_iterations=%d reached after %d critique cycles, finalizing",
+                        self.state.max_iterations, self._iteration_count,
+                    )
+                    return "finalize_run"
                 next_phase = critique.next_phase
                 self.state.next_phase = str(next_phase.value) if next_phase else None
                 self.state.revision_reason = (
@@ -309,6 +317,7 @@ class LeadAgentToolController:
         critique through normal tool selection.
         """
         self._step_count = 0
+        self._iteration_count = 0
 
         # Step 1: Plan (always first)
         try:
@@ -333,7 +342,6 @@ class LeadAgentToolController:
             return self.state
 
         # Iterative section: write → verify → critique → (loop)
-        iteration_count = 0
         while self._step_count < self.max_steps:
             # Select and execute next tool
             next_tool = self.select_next_tool()
@@ -365,13 +373,13 @@ class LeadAgentToolController:
 
             # After critique, check iteration cap for REVISE
             if next_tool == "critique_report":
-                iteration_count += 1
+                self._iteration_count += 1
                 critique = self.state.critique_result
                 if critique and critique.decision == CritiqueDecision.REVISE:
-                    if iteration_count >= self.state.max_iterations:
+                    if self._iteration_count >= self.state.max_iterations:
                         logger.info(
                             "max_iterations=%d reached after %d cycles, finalizing",
-                            self.state.max_iterations, iteration_count,
+                            self.state.max_iterations, self._iteration_count,
                         )
                         # Force finalize on next iteration
                         self.state.status = "critiqued"
