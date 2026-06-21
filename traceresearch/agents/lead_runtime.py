@@ -92,6 +92,23 @@ def _resolve_llm_token_usage(agent: Any) -> Any | None:
         return None
 
 
+def _error_info(exc: Exception) -> ErrorInfo:
+    """Build an ErrorInfo with a guaranteed non-empty message.
+
+    TraceEvent validation requires ``error.message`` to be non-empty for
+    FAILED events.  If ``str(exc)`` returns an empty string we fall back
+    to the exception class name so a Pydantic ValidationError never masks
+    the original exception.
+    """
+    msg = str(exc) or type(exc).__name__
+    return ErrorInfo(type=type(exc).__name__, message=msg)
+
+
+def _safe_str(value: object, fallback: str = "unknown") -> str:
+    """Return ``str(value)`` or *fallback* when *value* is None."""
+    return str(value) if value is not None else fallback
+
+
 class LeadAgentRuntime:
     """Unified runtime that orchestrates the research pipeline as discrete steps.
 
@@ -187,12 +204,12 @@ class LeadAgentRuntime:
                              input_summary="Planner failed",
                              output_summary=str(exc),
                              status=TraceStatus.FAILED,
-                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+                             error=_error_info(exc))
             self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
                              input_summary="plan_research failed",
                              output_summary=str(exc),
                              status=TraceStatus.FAILED,
-                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+                             error=_error_info(exc))
             raise
 
         return self.state
@@ -216,9 +233,10 @@ class LeadAgentRuntime:
                          input_summary="starting research",
                          output_summary="dispatching subagents")
 
+        _safe_provider = _safe_str(getattr(provider, "provider_name", None), "provider")
         self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_CALL,
                          input_summary="calling LeadResearchAgent.conduct_research",
-                         output_summary=f"provider={provider.provider_name}")
+                         output_summary=f"provider={_safe_provider}")
 
         try:
             # Record RESEARCHER events (preserving existing trace contract)
@@ -239,7 +257,7 @@ class LeadAgentRuntime:
 
             self._trace_agent(
                 AgentRole.RESEARCHER, EventType.FINISH,
-                f"{provider.provider_name} provider results",
+                f"{_safe_provider} provider results",
                 f"stored {len(self.state.evidence)} evidence candidates",
             )
 
@@ -282,12 +300,12 @@ class LeadAgentRuntime:
                              input_summary="LeadResearchAgent failed",
                              output_summary=str(exc),
                              status=TraceStatus.FAILED,
-                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+                             error=_error_info(exc))
             self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
                              input_summary="run_research_subagents failed",
                              output_summary=str(exc),
                              status=TraceStatus.FAILED,
-                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+                             error=_error_info(exc))
             raise
 
         return self.state
@@ -330,12 +348,12 @@ class LeadAgentRuntime:
                              input_summary="Writer.draft failed",
                              output_summary=str(exc),
                              status=TraceStatus.FAILED,
-                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+                             error=_error_info(exc))
             self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
                              input_summary="write_report failed",
                              output_summary=str(exc),
                              status=TraceStatus.FAILED,
-                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+                             error=_error_info(exc))
             raise
 
         return self.state
@@ -358,14 +376,14 @@ class LeadAgentRuntime:
                          input_summary="starting verification",
                          output_summary="verifying claims against evidence")
 
-        self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_CALL,
-                         input_summary="calling Verifier.verify",
-                         output_summary=f"claims={len(self.state.draft_report.claims)}")
-
         # LLM mode detection — instance-based, works for direct injection.
         _verifier_llm_mode, _verifier_llm_model = _resolve_llm_mode(self._verifier)
 
         try:
+            _claim_count = len(self.state.draft_report.claims) if self.state.draft_report is not None else 0
+            self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.TOOL_CALL,
+                             input_summary="calling Verifier.verify",
+                             output_summary=f"claims={_claim_count}")
             self._trace_agent(
                 AgentRole.VERIFIER, EventType.START,
                 "draft claims", "verifying claim support",
@@ -413,12 +431,12 @@ class LeadAgentRuntime:
                              input_summary="Verifier.verify failed",
                              output_summary=str(exc),
                              status=TraceStatus.FAILED,
-                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+                             error=_error_info(exc))
             self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
                              input_summary="verify_report failed",
                              output_summary=str(exc),
                              status=TraceStatus.FAILED,
-                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+                             error=_error_info(exc))
             raise
 
         return self.state
@@ -473,12 +491,12 @@ class LeadAgentRuntime:
                              input_summary="Critic.review failed",
                              output_summary=str(exc),
                              status=TraceStatus.FAILED,
-                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+                             error=_error_info(exc))
             self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
                              input_summary="critique_report failed",
                              output_summary=str(exc),
                              status=TraceStatus.FAILED,
-                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+                             error=_error_info(exc))
             raise
 
         return self.state
@@ -549,12 +567,12 @@ class LeadAgentRuntime:
                              input_summary="Writer.final failed",
                              output_summary=str(exc),
                              status=TraceStatus.FAILED,
-                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+                             error=_error_info(exc))
             self._trace_step(step, AgentRole.LEAD_RUNTIME, EventType.FINISH,
                              input_summary="finalize_run failed",
                              output_summary=str(exc),
                              status=TraceStatus.FAILED,
-                             error=ErrorInfo(type=type(exc).__name__, message=str(exc)))
+                             error=_error_info(exc))
             raise
 
         return self.state

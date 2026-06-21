@@ -44,7 +44,20 @@
 - Added this patch notes section.
 - Known Limitations updated.
 
-### Phase 3: Unit Tests (45 tests)
+### Patch Notes (第三轮边缘修复)
+
+**5. Summary construction moved inside try/except:**
+- `verify_report` TOOL_CALL (`len(self.state.draft_report.claims)`) was outside try — moved inside with `None` guard (`_claim_count`). If `draft_report is None`, the guard produces `0` for the trace summary, and the subsequent `Verifier.verify(draft=None)` raises inside try, which records FAILED FINISH.
+- `run_research_subagents` TOOL_CALL used `provider.provider_name` outside try — replaced with `_safe_str(getattr(provider, "provider_name", None), "provider")`. Inside-try access also uses the safe variable.
+- Added `_safe_str()` helper: returns `str(value)` or fallback when value is None.
+
+**6. Empty error.message fallback:**
+- Added `_error_info(exc)` helper: `message = str(exc) or type(exc).__name__`.
+- Replaced all 12 `ErrorInfo(type=type(exc).__name__, message=str(exc))` occurrences in except blocks with `_error_info(exc)`.
+- If `str(exc)` returns `""`, the TraceEvent validator won't fail because `error.message` falls back to the class name.
+- Does not swallow exceptions — always re-raises after recording the trace.
+
+### Phase 3: Unit Tests (52 tests)
 - RuntimeState: 4 tests
 - Init: 2 tests
 - plan_research: 4 tests
@@ -56,10 +69,13 @@
 - run_pipeline: 4 tests
 - Error handling: 1 test
 - AgentRole regression: 2 tests
-- **Step failure trace (new):** 6 tests — one per step, verifying FAILED FINISH + ErrorInfo + re-raise
-- **All-tasks-failed trace (new):** 2 tests — run_research_subagents records FAILED internally
-- **LLM mode detection (new):** 6 tests — _resolve_llm_mode, direct-injected LLMWriter/LLMVerifier trace override
-- **Package exports (new):** 3 tests — 005 types, 004 types, 004 model types
+- Step failure trace: 6 tests
+- All-tasks-failed trace: 2 tests
+- LLM mode detection: 6 tests
+- Package exports: 3 tests
+- **verify_report draft_report=None (new):** 2 tests — re-raises, FAILED FINISH with non-empty error.message
+- **Empty message exception (new):** 4 tests — _error_info fallback, re-raise, trace has fallback message
+- **Provider without provider_name (new):** 1 test — _safe_str fallback in TOOL_CALL
 
 ### Phase 4: Integration Tests (12 tests)
 - Full pipeline with fixture provider: 3 tests
@@ -71,7 +87,7 @@
 
 ### Targeted
 ```
-tests/unit/test_lead_agent_runtime.py — 45 passed
+tests/unit/test_lead_agent_runtime.py — 52 passed
 tests/integration/test_lead_runtime_integration.py — 12 passed
 tests/unit/test_trace_models.py — 14 passed
 ```
@@ -79,7 +95,7 @@ tests/unit/test_trace_models.py — 14 passed
 ### Full Suite
 ```
 python3 -m pytest -m "not llm_smoke" -q
-340 passed, 5 deselected
+347 passed, 5 deselected
 ```
 
 One existing test was updated (`test_all_agent_roles_are_available`) to include `LeadRuntime`. No other existing tests were broken.
@@ -101,8 +117,8 @@ traceresearch eval — 5/5 pass, case_pass_rate=1.00
 ### New Files
 | File | Lines | Purpose |
 |------|-------|---------|
-| `traceresearch/agents/lead_runtime.py` | ~660 | `LeadAgentRuntime`, `RuntimeState`, `RunContext`, `_resolve_llm_mode`, `_resolve_llm_token_usage` |
-| `tests/unit/test_lead_agent_runtime.py` | ~1100 | 45 unit tests (28 original + 17 new) |
+| `traceresearch/agents/lead_runtime.py` | ~690 | `LeadAgentRuntime`, `RuntimeState`, `RunContext`, `_resolve_llm_mode`, `_resolve_llm_token_usage`, `_error_info`, `_safe_str` |
+| `tests/unit/test_lead_agent_runtime.py` | ~1300 | 52 unit tests (28 original + 24 new) |
 | `tests/integration/test_lead_runtime_integration.py` | ~340 | 12 integration tests |
 | `specs/005-lead-agent-runtime/` | — | spec, plan, tasks, quickstart, review |
 

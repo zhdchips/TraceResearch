@@ -26,6 +26,7 @@ from traceresearch.evidence.models import (
     SourceResult,
     SourceType,
 )
+from traceresearch.source_discovery.base import SourceDiscoveryProvider
 from traceresearch.trace.models import AgentRole, EventType, TraceEvent, TraceStatus
 from traceresearch.trace.writer import TraceWriter
 
@@ -1138,3 +1139,163 @@ class TestPackageExports:
         assert CandidateEvidenceBatch is not None
         assert CompressedResearchContext is not None
         assert SubagentStatus is not None
+
+
+# ---------------------------------------------------------------------------
+# Edge case: verify_report with draft_report=None
+# ---------------------------------------------------------------------------
+
+class TestVerifyReportDraftReportNone:
+    """When draft_report is None, verify_report must record FAILED FINISH
+    and re-raise, not let AttributeError escape un-traced."""
+
+    def test_raises_when_draft_report_is_none(self, runtime_state, tmp_trace_writer):
+        runtime_state.draft_report = None  # explicitly None
+        runtime_state.evidence = []
+        runtime_state.research_brief = ResearchBrief(
+            run_id="test-run-001", objective="Test",
+            scope_boundaries=[], assumptions=[],
+            open_clarifications=["test clarification"],
+            perspectives=[], success_criteria=["C1"],
+            research_tasks=[],
+        )
+
+        mock_verifier = MagicMock(spec=VerifierProtocol)
+        mock_verifier.verify.side_effect = AttributeError("'NoneType' object has no attribute 'claims'")
+        runtime = LeadAgentRuntime(state=runtime_state, verifier=mock_verifier)
+
+        with pytest.raises(AttributeError):
+            runtime.verify_report()
+
+    def test_failed_finish_trace_when_draft_report_is_none(self, runtime_state, tmp_trace_writer):
+        runtime_state.draft_report = None
+        runtime_state.evidence = []
+        runtime_state.research_brief = ResearchBrief(
+            run_id="test-run-001", objective="Test",
+            scope_boundaries=[], assumptions=[],
+            open_clarifications=["test clarification"],
+            perspectives=[], success_criteria=["C1"],
+            research_tasks=[],
+        )
+
+        mock_verifier = MagicMock(spec=VerifierProtocol)
+        mock_verifier.verify.side_effect = AttributeError("'NoneType' object has no attribute 'claims'")
+        runtime = LeadAgentRuntime(state=runtime_state, verifier=mock_verifier)
+
+        try:
+            runtime.verify_report()
+        except AttributeError:
+            pass
+
+        events = tmp_trace_writer.read_all()
+        lead_events = [e for e in events if e.agent_role == AgentRole.LEAD_RUNTIME]
+
+        # Must have START + TOOL_CALL + TOOL_RESULT(FAILED) + FINISH(FAILED) = 4
+        assert len(lead_events) == 4, f"Expected 4 LEAD_RUNTIME events, got {len(lead_events)}"
+        assert lead_events[0].event_type == EventType.START
+        assert lead_events[1].event_type == EventType.TOOL_CALL
+
+        tool_result = lead_events[2]
+        assert tool_result.event_type == EventType.TOOL_RESULT
+        assert tool_result.status == TraceStatus.FAILED
+
+        finish = lead_events[3]
+        assert finish.event_type == EventType.FINISH
+        assert finish.status == TraceStatus.FAILED
+        assert finish.error is not None
+        assert finish.error.message, "error.message must be non-empty"
+        assert finish.error.type in ("AttributeError", "TypeError")
+
+
+# ---------------------------------------------------------------------------
+# Edge case: exception with empty __str__ (empty message fallback)
+# ---------------------------------------------------------------------------
+
+class EmptyMessageError(Exception):
+    """Exception whose str() returns empty — used to test error.message fallback."""
+    def __str__(self) -> str:
+        return ""
+
+
+class TestEmptyErrorMessage:
+    """Exceptions with empty str() must still produce non-empty error.message."""
+
+    def test_plan_research_re_raises_empty_message_error(self, runtime_state):
+        mock_planner = MagicMock(spec=Planner)
+        mock_planner.plan.side_effect = EmptyMessageError()
+
+        runtime = LeadAgentRuntime(state=runtime_state, planner=mock_planner)
+        with pytest.raises(EmptyMessageError):
+            runtime.plan_research("test query")
+
+    def test_plan_research_trace_has_fallback_message(self, runtime_state, tmp_trace_writer):
+        mock_planner = MagicMock(spec=Planner)
+        mock_planner.plan.side_effect = EmptyMessageError()
+
+        runtime = LeadAgentRuntime(state=runtime_state, planner=mock_planner)
+        try:
+            runtime.plan_research("test query")
+        except EmptyMessageError:
+            pass
+
+        events = tmp_trace_writer.read_all()
+        lead_events = [e for e in events if e.agent_role == AgentRole.LEAD_RUNTIME]
+
+        assert len(lead_events) == 4
+        finish = lead_events[-1]
+        assert finish.event_type == EventType.FINISH
+        assert finish.status == TraceStatus.FAILED
+        assert finish.error is not None
+        # message must be non-empty — "EmptyMessageError" is the fallback
+        assert finish.error.message == "EmptyMessageError"
+        assert finish.error.type == "EmptyMessageError"
+
+    def test__error_info_fallback(self):
+        """Unit-test _error_info directly — empty str → class name."""
+        from traceresearch.agents.lead_runtime import _error_info
+
+        exc = EmptyMessageError()
+        info = _error_info(exc)
+        assert info.type == "EmptyMessageError"
+        assert info.message == "EmptyMessageError"
+
+    def test__error_info_normal_exception(self):
+        """_error_info preserves normal str()."""
+        from traceresearch.agents.lead_runtime import _error_info
+
+        exc = ValueError("bad value")
+        info = _error_info(exc)
+        assert info.type == "ValueError"
+        assert info.message == "bad value"
+
+
+# ---------------------------------------------------------------------------
+# Edge case: provider without provider_name in run_research_subagents
+# ---------------------------------------------------------------------------
+
+class TestProviderWithoutName:
+    """run_research_subagents must tolerate a provider missing provider_name."""
+
+    def test_provider_without_provider_name(self, runtime_state, sample_brief, sample_evidence, tmp_trace_writer):
+        runtime_state.research_brief = sample_brief
+        mock_lead = MagicMock()
+        mock_lead.conduct_research.return_value = MagicMock(
+            evidence=sample_evidence, failed_task_ids=[],
+        )
+
+        # Provider with provider_name=None (missing attribute simulated via getattr)
+        mock_provider = MagicMock()
+        mock_provider.provider_name = None
+
+        runtime = LeadAgentRuntime(state=runtime_state, lead_researcher=mock_lead)
+        result = runtime.run_research_subagents(mock_provider)
+
+        assert result.status == "researched"
+
+        events = tmp_trace_writer.read_all()
+        lead_events = [e for e in events if e.agent_role == AgentRole.LEAD_RUNTIME]
+        assert len(lead_events) == 4
+        # TOOL_CALL should have "provider" as fallback (since provider_name is None)
+        tool_call = lead_events[1]
+        assert tool_call.event_type == EventType.TOOL_CALL
+        assert "provider=provider" in tool_call.output_summary
