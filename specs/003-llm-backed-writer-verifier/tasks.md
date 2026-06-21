@@ -119,7 +119,7 @@ Every task uses this format:
 
 ### 3.1 LLM Verifier Unit Tests
 
-- [ ] T014 [P1] [US2] 先写 test: `test_llm_verifier.py` — 用 mock `LLMProvider`（fake `complete()` 返回预制 JSON），覆盖：
+- [x] T014 [P1] [US2] 先写 test: `test_llm_verifier.py` — 用 mock `LLMProvider`（fake `complete()` 返回预制 JSON），覆盖：
   - SUPPORTED claim: evidence summary 与 claim 语义一致 → support_status=supported
   - WEAKLY_SUPPORTED claim: evidence 部分覆盖 → support_status=weakly_supported
   - UNSUPPORTED claim: evidence 无关 / 矛盾 → support_status=unsupported
@@ -133,7 +133,7 @@ Every task uses this format:
 
 ### 3.2 LLM Verifier Implementation
 
-- [ ] T015 [P1] [US2] 实现 `LLMVerifier` — 实现 `VerifierProtocol`，构造函数接收 `LLMProvider` 和 `LLMVerifierConfig`。`verify()` 方法：
+- [x] T015 [P1] [US2] 实现 `LLMVerifier` — 实现 `VerifierProtocol`，构造函数接收 `LLMProvider` 和 `LLMVerifierConfig`。`verify()` 方法：
   1. 构建 prompt（包含 claim text + evidence summary + 判断要求）
   2. 调用 `provider.complete(prompt, schema=LLMVerificationResultSchema)`
   3. Post-validate: claim_ids 集合匹配、support_status 合法
@@ -151,7 +151,7 @@ Every task uses this format:
 
 ### 4.1 LLM Writer Unit Tests
 
-- [ ] T016 [P1] [US1] 先写 test: `test_llm_writer.py` — 用 mock `LLMProvider`（fake `complete()` 返回预制 JSON），覆盖：
+- [x] T016 [P1] [US1] 先写 test: `test_llm_writer.py` — 用 mock `LLMProvider`（fake `complete()` 返回预制 JSON），覆盖：
   - 正常 verified evidence → FinalReport 包含 executive_summary + findings + limitations + evidence_refs + follow_ups
   - 所有 key claims 的 evidence_ids 都来自输入 evidence set（hallucination check）
   - 空 evidence → report 明确指示 no verified findings
@@ -165,7 +165,7 @@ Every task uses this format:
 
 ### 4.2 LLM Writer Implementation
 
-- [ ] T017 [P1] [US1] 实现 `LLMWriter` — 实现 `WriterProtocol`，构造函数接收 `LLMProvider` 和 `LLMWriterConfig`。`final()` 方法：
+- [x] T017 [P1] [US1] 实现 `LLMWriter` — 实现 `WriterProtocol`，构造函数接收 `LLMProvider` 和 `LLMWriterConfig`。`final()` 方法：
   1. 截断 evidence 到 `max_evidence_items`
   2. 构建 prompt（evidence summaries + research_brief objective + sections 要求）
   3. 调用 `provider.complete(prompt, schema=LLMFinalReportSchema)`
