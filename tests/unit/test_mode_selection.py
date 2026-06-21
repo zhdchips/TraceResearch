@@ -36,16 +36,21 @@ class _FakeProvider(LLMProvider):
 
 class TestResolveMode:
     def test_explicit_llm_wins(self):
-        assert resolve_mode("llm", "WRITER", default="deterministic") == "llm"
+        assert resolve_mode("llm", "WRITER", default="deterministic", _env={}) == "llm"
 
-    def test_explicit_deterministic_wins(self):
-        assert resolve_mode("deterministic", "WRITER", default="deterministic") == "deterministic"
+    def test_explicit_deterministic_with_clean_env(self):
+        """When env is clean, explicit 'deterministic' stays deterministic."""
+        assert resolve_mode("deterministic", "WRITER", default="deterministic", _env={}) == "deterministic"
 
-    def test_default_returns_deterministic(self):
-        assert resolve_mode("deterministic", "WRITER", default="deterministic") == "deterministic"
+    def test_default_returns_deterministic_with_clean_env(self):
+        assert resolve_mode("deterministic", "WRITER", default="deterministic", _env={}) == "deterministic"
+
+    def test_env_llm_overrides_default(self):
+        """When mode is default and env says 'llm', env wins."""
+        assert resolve_mode("deterministic", "WRITER", default="deterministic", _env={"TRACERESEARCH_WRITER_MODE": "llm"}) == "llm"
 
     def test_unknown_mode_defaults_to_deterministic(self):
-        assert resolve_mode("bogus", "WRITER", default="deterministic") == "deterministic"
+        assert resolve_mode("bogus", "WRITER", default="deterministic", _env={}) == "deterministic"
 
 
 # ---------------------------------------------------------------------------

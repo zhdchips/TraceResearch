@@ -23,17 +23,22 @@ def resolve_mode(
 ) -> str:
     """Resolve the effective mode for a Writer or Verifier component.
 
-    Priority: explicit_mode > env var > default.
+    Priority: explicit_mode > default > env var.
+    Env var only applies when explicit_mode equals the default
+    (which means caller didn't explicitly set a non-default value).
     """
     env = _env if _env is not None else os.environ
-    if explicit_mode and explicit_mode != default:
-        if explicit_mode in VALID_MODES:
-            return explicit_mode
-        return default  # unknown mode → default
 
-    if explicit_mode == "llm":
-        return "llm"
+    # If explicit mode is a valid non-default choice, use it directly.
+    if explicit_mode and explicit_mode in VALID_MODES and explicit_mode != default:
+        return explicit_mode
 
+    # If explicit mode is unknown, fall back to default.
+    if explicit_mode and explicit_mode not in VALID_MODES:
+        return default
+
+    # At this point, explicit_mode is either the default or None.
+    # Check env var as a fallback.
     env_var = f"TRACERESEARCH_{component.upper()}_MODE"
     env_value = env.get(env_var, "")
     if env_value in VALID_MODES:

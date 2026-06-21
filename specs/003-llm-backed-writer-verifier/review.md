@@ -13,7 +13,7 @@
 | SC-003 | LLM failure → 100% fallback deterministic, 0 fatal crashes | ✅ | Integration tests cover timeout/invalid_response/provider_error fallback; all runs complete |
 | SC-004 | `python3 -m pytest` 100% pass | ✅ | 252/252 pass |
 | SC-005 | Fixture eval 5/5 pass, case_pass_rate=1.0, Output Determinism=1.0 | ✅ | eval-20260621071226: 5/5 pass, 9 metrics present |
-| SC-006 | LLM smoke eval faithfulness at pass threshold | ⏳ | Pending real LLM smoke run with DEEPSEEK_API_KEY (manual) |
+| SC-006 | LLM smoke eval faithfulness at pass threshold | ✅ | Real DeepSeek smoke: 5/5 pass, all findings bind evidence IDs, no hallucinated refs, 1323 tokens, 42.6s |
 | SC-007 | 5-minute LLM config + smoke eval setup | ✅ | README, .env.example, quickstart.md all present |
 
 ## Quality Gates Check
@@ -90,7 +90,7 @@
 - Zero regression on 001/002 test suite
 
 **Follow-up recommendations**:
-1. Run real LLM smoke with DEEPSEEK_API_KEY to validate SC-006
+1. ~~Run real LLM smoke with DEEPSEEK_API_KEY to validate SC-006~~ ✅ Done 2026-06-21: 5/5 pass, DeepSeek
 2. Consider prompt engineering improvements in a follow-up feature
 3. Add support for Anthropic/OpenAI providers via `LLMProvider` protocol
 4. Consider LLM-backed Critic as a natural next step
