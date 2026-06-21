@@ -15,7 +15,7 @@ Review the implementation of the "Research Subagents" feature, which replaces th
 
 | # | Criterion | Status | Evidence |
 |---|----------|--------|----------|
-| SC-001 | Existing tests pass (279/279, 0 failures) | ✅ PASS | `python3 -m pytest -m "not llm_smoke" -q` — 279 passed |
+| SC-001 | Existing tests pass (283 passed, 5 deselected) | ✅ PASS | `python3 -m pytest -m "not llm_smoke" -q` — 283 passed, 5 deselected |
 | SC-002 | Existing CLI commands still work | ✅ PASS | `test_cli_eval_command_outputs_summary_and_result_file` passes |
 | SC-003 | Research tasks execute through SubagentExecutor | ✅ PASS | `test_subagent_executor.py` — 7/7 tests pass; integration tests verify concurrent execution |
 | SC-004 | Evidence Store contains valid evidence rows | ✅ PASS | `test_fixture_run_produces_evidence` — evidence rows with valid IDs |
@@ -107,7 +107,7 @@ Remaining tasks are P2 polish items, not blocking for feature completion.
 
 | Test Suite | Result |
 |------------|--------|
-| All unit tests (excl. llm_smoke) | 279 passed, 0 failed |
+| All unit tests (excl. llm_smoke) | 283 passed, 0 failed, 5 deselected |
 | Integration tests | 37 passed, 0 failed |
 | Eval tests | 4 passed, 0 failed |
 | Fixture eval (5 seed cases) | 5/5 pass |
@@ -128,7 +128,7 @@ Remaining tasks are P2 polish items, not blocking for feature completion.
 
 1. Clean three-layer architecture with clear separation: LeadResearchAgent (orchestration), SubagentExecutor (concurrency), ResearchTaskAgent (execution)
 2. Proper backward compatibility — AgentRole extensions are additive, TraceEvent.subagent_id is optional, CritiqueResult.failed_task_ids defaults to empty
-3. Thorough test coverage — 7 executor tests, 4 task_agent tests, 6 lead_agent tests, 4 integration tests
+3. Thorough test coverage — 7 executor tests, 4 task_agent tests, 8 lead_agent tests, 5 subagent_models tests, 6 integration tests
 4. Error handling pyramid: ProviderError → to_trace_error() → CandidateEvidenceBatch.error → Trace events
 5. All-failure detection prevents empty-evidence runs from being marked COMPLETED
 6. Zero new external dependencies
@@ -155,7 +155,7 @@ The transition from "first error → immediate FAILED" to "collect all results �
 
 ## Known Limitations
 
-以下 3 个限制为当前实现中已知的设计取舍，不是 bug，也不阻塞 release。全量测试（282 passed, 5/5 fixture eval）已通过，这些限制被显式接受。
+以下 3 个限制为当前实现中已知的设计取舍，不是 bug，也不阻塞 release。全量测试（283 passed, 5 deselected, 5/5 fixture eval）已通过，这些限制被显式接受。
 
 ### L-001: Timeout is not strict per-task runtime timeout
 
@@ -172,10 +172,10 @@ The transition from "first error → immediate FAILED" to "collect all results �
 当前 `pool.shutdown(wait=False)` 让 `execute()` 快速返回，但已经运行中的 thread/provider call 仍会继续到自然结束。这意味着：
 
 - timeout 触发后，后台 provider HTTP 调用或文件 I/O 可能仍在执行。
-- 如果 `SourceDiscoveryProvider` 子类有共享 mutable cache（如 `ExaSearchProvider` 的文档缓存），可能在 run 继续后发生 late mutation。
+- 由于 `LeadResearchAgent` 将同一个 provider 实例共享给所有 subagent（通过闭包捕获），`FixtureSourceProvider` 的内部 YAML cache 和 `ExaSearchProvider` 的 document cache 在并发调用时是共享 mutable 状态。timeout 后若后台线程继续写入这些 cache，可能与主线程后续操作产生 late mutation 风险。当前实践中未观察到 data corruption，但此风险未被消除。
 - Python thread 不能被安全强杀（`threading.Thread` 没有 `terminate()` 方法）。
 
-**接受原因**：`SourceDiscoveryProvider` 是同步接口，当前 provider 实现没有跨 task 共享 mutable 状态（FixtureSourceProvider 完全无状态，ExaSearchProvider 的缓存只在单 task 内使用）。超时仅用于防护 hung provider 导致 caller 永久阻塞的场景，不用于精确资源管理。
+**接受原因**：`SourceDiscoveryProvider` 是同步接口。当前 `LeadResearchAgent` 将同一个 provider 实例共享给所有 subagent（通过 `agent_factory` 闭包捕获）。`FixtureSourceProvider` 内部缓存 loaded YAML，`ExaSearchProvider` 内部有 document cache — 两者在并发调用时存在共享 mutable 状态。但由于 (a) provider 的 search/fetch 结果在单次 run 内是幂等的，(b) Python GIL 保护了单个 dict 操作的原子性，当前未观察到 data corruption。超时仅用于防护 hung provider 导致 caller 永久阻塞的场景，不用于精确资源管理。
 
 **未来方向**：如果需要 hard cancellation，应考虑：
 - provider-level timeout：在 HTTP client 层面设置 connect/read timeout
@@ -218,5 +218,5 @@ Feature is functionally complete. Remaining work is P2 polish:
 ```yaml
 decision: complete
 next_phase: none
-reason: "All P0/P1 tasks complete, 279/279 tests pass, 5/5 fixture eval pass, zero regressions. Remaining P2 polish items (exports, dead code cleanup) are non-blocking for feature acceptance."
+reason: "All P0/P1 tasks complete, 283 passed + 5 deselected (llm_smoke), 5/5 fixture eval pass, zero regressions. Remaining P2 polish items are non-blocking for feature acceptance."
 ```
