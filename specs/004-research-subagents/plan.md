@@ -272,3 +272,37 @@ No constitution violations. All principles either maintained or strengthened (Co
 No new external dependencies. All concurrency via stdlib `concurrent.futures`. No LangGraph, LangChain, or other orchestration framework.
 
 Single justified complexity: `SubagentExecutor` class (~80 lines) is the only new abstraction beyond simple delegation. It's justified by the need for bounded concurrency, timeout, and failure isolation — functions that can't be done with a simple `for` loop.
+
+## Design Caveats & Known Limitations
+
+以下 caveats 是本 feature 中已知的设计取舍，在 plan 阶段已识别并被显式接受。它们不是 bug，也不阻塞 release（全量测试已通过），但指出了当前实现的边界。
+
+### Caveat 1: Timeout is batch-level, not per-task wall-clock timeout
+
+`SubagentExecutor` 使用 `concurrent.futures.as_completed(timeout=task_timeout)` 控制等待窗口。此 timeout 是从 `execute()` 调用开始到 `as_completed` 循环结束的总时长。它不是每个 task 从提交到线程开始运行起计算的独立 wall-clock timeout。
+
+**影响**：当 `max_workers < task_count` 时，队列中尚未开始执行的 task 可能与已超时的运行中 task 一起被标记为 `TIMED_OUT`。
+
+**接受原因**：目标是防止 caller 被慢 task 无限阻塞（已达成），不是实现精确 per-task scheduler。Fixture eval 路径不受影响（task 快速返回）。
+
+**未来方向**：记录每个 task 的 `submit_time`，在 `as_completed` 循环中对已完成 + 超时的 future 分别处理；对超时 future 调用 `future.cancel()` 仅影响未开始的 future。
+
+### Caveat 2: Timeout cannot forcibly terminate running provider calls
+
+`pool.shutdown(wait=False)` 使 `execute()` 快速返回而不等待慢 task，但已运行中的 thread/provider call 继续执行到自然结束。Python thread 没有安全强杀机制。
+
+**影响**：timeout 后后台 provider 调用可能仍在执行。如果 provider 有共享 mutable cache（如 `ExaSearchProvider` 的文档缓存），可能存在 late mutation 风险。当前 provider 实现没有该风险（FixtureSourceProvider 无状态，ExaSearchProvider 仅在单 task scope 内使用）。
+
+**接受原因**：`SourceDiscoveryProvider` 是同步接口。当前超时仅用于防护 hung provider 导致 caller 永久阻塞的场景。不用于精确资源管理。
+
+**未来方向**：provider-level HTTP timeout、async provider + `asyncio.wait_for()`、process isolation（multiprocessing）、或 sandbox/runtime-level cancellation。
+
+### Caveat 3: Tool observability is at search level, not per-fetch
+
+Trace 中的 `RESEARCH_SUBAGENT TOOL_CALL/TOOL_RESULT` 事件包围的是 `Researcher.research()` 的整体流程 — `provider.search()` 后接多次 `provider.fetch()`。没有为单个 `provider.fetch()` 写独立 trace event。
+
+**影响**：无法从 trace 中区分 "search 成功但某个 fetch 失败" 和 "search 本身失败"；per-source fetch latency 不可见。
+
+**接受原因**：search-level observability 满足当前 eval 和 review 需求。Fixture eval 的 provider 总是返回完整数据。Live provider 的 fetch 失败通过 `Evidence.limitations` 和 Trace error 间接体现。
+
+**未来方向**：让 `ResearchTaskAgent` 或 `Researcher` 为每个 `provider.fetch()` 分别记录 tool event（如 `fixture.fetch`），或扩展 `ToolEvent` 以携带 source_id 级别的 metadata。
