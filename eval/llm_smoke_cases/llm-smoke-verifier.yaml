@@ -1,0 +1,18 @@
+case_id: llm-smoke-verifier
+description: "Validate LLM Verifier semantic judgment accuracy on mixed claims"
+mode: verifier
+purpose: >
+  Present LLM Verifier with a mix of correctly-supported, weakly-supported,
+  and unsupported claims against known evidence. Check classification accuracy
+  against expected support status.
+input:
+  expected_classifications:
+    correctly_supported:
+      - claim: "LangGraph provides explicit workflow control via StateGraph."
+        expected: supported
+    weakly_supported:
+      - claim: "LangGraph is the only framework suitable for production."
+        expected: weakly_supported
+    unsupported:
+      - claim: "CrewAI can run on quantum computers natively."
+        expected: unsupported

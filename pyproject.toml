@@ -25,6 +25,10 @@ traceresearch = "traceresearch.cli:app"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+addopts = "-m 'not llm_smoke'"
+markers = [
+    "llm_smoke: tests that require a real LLM provider (manual only, not in CI)",
+]
 
 [tool.setuptools.packages.find]
 include = ["traceresearch*"]

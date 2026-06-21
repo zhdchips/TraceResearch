@@ -262,19 +262,19 @@ Every task uses this format:
 
 ### 7.1 Smoke Eval Infrastructure
 
-- [ ] T026 [P2] [US4] 配置 pytest marker `llm_smoke`：在 `pyproject.toml` 添加 `addopts = "-m 'not llm_smoke'"`，创建 `tests/llm_smoke/` 目录和 `conftest.py`（注册 marker）
+- [x] T026 [P2] [US4] 配置 pytest marker `llm_smoke`：在 `pyproject.toml` 添加 `addopts = "-m 'not llm_smoke'"`，创建 `tests/llm_smoke/` 目录和 `conftest.py`（注册 marker）
   - DoD: `python3 -m pytest` 不运行 `llm_smoke` tests；`python3 -m pytest -m llm_smoke` 仅运行 LLM smoke tests
   - Tests: `python3 -m pytest --collect-only -m llm_smoke` 只显示 smoke tests
   - Related files: `pyproject.toml`, `tests/llm_smoke/__init__.py`, `tests/llm_smoke/conftest.py`
 
-- [ ] T027 [P2] [US4] 实现 `traceresearch/eval/llm_smoke.py` — LLM smoke eval runner：加载 smoke cases → 运行 LLM Writer/Verifier → 输出 metrics（faithfulness, citation_completeness, unsupported_claim_count, failover_success）→ 写 JSON result
+- [x] T027 [P2] [US4] 实现 `traceresearch/eval/llm_smoke.py` — LLM smoke eval runner：加载 smoke cases → 运行 LLM Writer/Verifier → 输出 metrics（faithfulness, citation_completeness, unsupported_claim_count, failover_success）→ 写 JSON result
   - DoD: smoke eval runner 可独立调用；输出 JSON 包含所有 metrics
   - Tests: 手动运行验证
   - Related files: `traceresearch/eval/llm_smoke.py`
 
 ### 7.2 Smoke Eval Cases
 
-- [ ] T028 [P2] [US4] 撰写 LLM smoke eval cases — 创建 `eval/llm_smoke_cases/` 目录，包含 3 个 YAML cases：
+- [x] T028 [P2] [US4] 撰写 LLM smoke eval cases — 创建 `eval/llm_smoke_cases/` 目录，包含 3 个 YAML cases：
   - `llm-smoke-writer.yaml`: fixture case-001 evidence → LLM Writer → 检查 output faithfulness + evidence binding
   - `llm-smoke-verifier.yaml`: 预制 mixed claims (supported/weakly_supported/unsupported) → LLM Verifier → 检查分类准确率
   - `llm-smoke-failover.yaml`: mock LLM 返回 invalid JSON → 验证 fallback 成功
@@ -282,7 +282,7 @@ Every task uses this format:
   - Tests: `python3 -c "import yaml; [yaml.safe_load(open(f'eval/llm_smoke_cases/{c}')) for c in ['llm-smoke-writer.yaml','llm-smoke-verifier.yaml','llm-smoke-failover.yaml']]"`
   - Related files: `eval/llm_smoke_cases/*.yaml`
 
-- [ ] T029 [P2] [US4] 实现 LLM smoke eval CLI 入口 — `traceresearch llm-smoke` 命令，读取 `eval/llm_smoke_cases/`，运行 `LLMSmokeRunner`，输出 summary 到 `eval/results/`
+- [x] T029 [P2] [US4] 实现 LLM smoke eval CLI 入口 — `traceresearch llm-smoke` 命令，读取 `eval/llm_smoke_cases/`，运行 `LLMSmokeRunner`，输出 summary 到 `eval/results/`
   - DoD: `traceresearch llm-smoke` 运行成功 or 返回 "LLM not configured"（无 key 时）
   - Tests: 手动运行 `traceresearch llm-smoke`（需 DEEPSEEK_API_KEY）
   - Related files: `traceresearch/cli.py`, `traceresearch/eval/llm_smoke.py`

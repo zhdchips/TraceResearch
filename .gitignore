@@ -34,3 +34,5 @@ Thumbs.db
 # Local run artifacts
 runs/*
 !runs/.gitkeep
+eval/results/
+!eval/results/.gitkeep

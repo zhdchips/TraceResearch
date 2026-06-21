@@ -1,9 +1,11 @@
 """CLI entrypoint for TraceResearch."""
 
+import json
 from pathlib import Path
 
 import typer
 
+from traceresearch.eval.llm_smoke import LLMSmokeRunner
 from traceresearch.eval.runner import EvalRunner
 from traceresearch.harness.mode_factory import resolve_mode
 from traceresearch.harness.orchestrator import ResearchHarness
@@ -148,3 +150,49 @@ def eval_command(
     typer.echo(f"failed_case_ids={failed_case_ids}")
     typer.echo(f"suggested_next_phase={result.suggested_next_phase}")
     typer.echo(f"result_file={result.result_path}")
+
+
+@app.command("llm-smoke")
+def llm_smoke_command(
+    cases_dir: Path = typer.Option(
+        Path("eval/llm_smoke_cases"),
+        "--cases-dir",
+        help="Directory containing LLM smoke case YAML files.",
+    ),
+    results_dir: Path = typer.Option(
+        Path("eval/results"),
+        "--results-dir",
+        help="Directory for smoke eval summary JSON.",
+    ),
+) -> None:
+    """Run LLM smoke eval (manual only — requires LLM credentials)."""
+    llm_config = LLMProviderConfig.from_env()
+    if not llm_config.is_configured():
+        typer.echo("LLM not configured — running with deterministic baseline.")
+        typer.echo("Set TRACERESEARCH_LLM_API_KEY or DEEPSEEK_API_KEY to enable LLM mode.")
+        runner = LLMSmokeRunner(cases_dir=cases_dir, results_dir=results_dir)
+    else:
+        provider = DeepSeekProvider(
+            api_key=llm_config.api_key,
+            model=llm_config.model,
+            base_url=llm_config.base_url,
+            timeout_seconds=llm_config.timeout_seconds,
+            max_tokens=llm_config.max_tokens,
+            temperature=llm_config.temperature,
+        )
+        runner = LLMSmokeRunner(
+            cases_dir=cases_dir, results_dir=results_dir, llm_provider=provider
+        )
+
+    summary = runner.run()
+    typer.echo(f"eval_run_id={summary['eval_run_id']}")
+    typer.echo(f"case_pass_rate={summary['case_pass_rate']:.2f}")
+    typer.echo(f"total_cases={summary['total_cases']}")
+    typer.echo(f"passed_cases={summary['passed_cases']}")
+
+    result_path = results_dir / f"{summary['eval_run_id']}-summary.json"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    typer.echo(f"result_file={result_path}")

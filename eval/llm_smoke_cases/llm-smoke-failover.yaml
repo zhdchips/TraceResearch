@@ -1,0 +1,16 @@
+case_id: llm-smoke-failover
+description: "Validate LLM failover to deterministic on simulated LLM failure"
+mode: both
+purpose: >
+  Simulate LLM provider returning invalid JSON or timing out.
+  Verify that the system correctly falls back to deterministic
+  Writer/Verifier and the run still completes.
+input:
+  failure_scenarios:
+    - type: invalid_json
+      description: "LLM returns non-parseable JSON → fallback deterministic"
+    - type: timeout
+      description: "LLM call times out → fallback deterministic"
+    - type: provider_error
+      description: "LLM returns HTTP 500 → fallback deterministic"
+  check_failover: true

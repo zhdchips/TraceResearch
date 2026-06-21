@@ -1,0 +1,17 @@
+case_id: llm-smoke-writer
+description: "Validate LLM Writer output faithfulness and evidence binding with fixture evidence"
+mode: writer
+purpose: >
+  Run LLM Writer against fixture case-001 verified evidence.
+  Check that: (1) all key claims bind evidence IDs, (2) no hallucinated claims,
+  (3) report sections are complete.
+input:
+  fixture_case: 001-framework-comparison
+  check_faithfulness: true
+  check_evidence_binding: true
+  required_sections:
+    - Executive Summary
+    - Findings
+    - Limitations
+    - Evidence References
+    - Follow-up Questions
