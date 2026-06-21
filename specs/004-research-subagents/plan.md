@@ -145,9 +145,9 @@ Research Phase (Lead Agent perspective):
 Subagent Lifecycle (per task):
   RESEARCH_SUBAGENT START    — task_id, subagent_id, perspective
   RESEARCH_SUBAGENT TOOL_CALL — task_id, subagent_id, tool_name="fixture.search"|"exa.search"
-  RESEARCH_SUBAGENT TOOL_RESULT — task_id, subagent_id, result_count, source_ids
-  RESEARCH_SUBAGENT FINISH   — task_id, subagent_id, status, latency_ms
-  RESEARCH_SUBAGENT ERROR    — task_id, subagent_id, error type/message (on failure)
+  RESEARCH_SUBAGENT TOOL_RESULT — task_id, subagent_id, result_count, source_ids; on failure: error type/message
+  RESEARCH_SUBAGENT FINISH   — task_id, subagent_id, status (success/failed), latency_ms
+  RESEARCH_SUBAGENT ERROR    — 仅用于 agent_factory 自身抛未捕获异常（非常规路径，实际极少触发）
 ```
 
 ### Trace Field Compatibility
