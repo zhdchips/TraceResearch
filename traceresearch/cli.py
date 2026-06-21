@@ -5,7 +5,10 @@ from pathlib import Path
 import typer
 
 from traceresearch.eval.runner import EvalRunner
+from traceresearch.harness.mode_factory import resolve_mode
 from traceresearch.harness.orchestrator import ResearchHarness
+from traceresearch.llm.config import LLMProviderConfig
+from traceresearch.llm.deepseek_provider import DeepSeekProvider
 from traceresearch.source_discovery.base import ProviderNotConfiguredError, SourceDiscoveryError
 from traceresearch.source_discovery.factory import build_source_provider
 
@@ -35,6 +38,16 @@ def run(
         "--output-dir",
         help="Parent directory for run artifacts.",
     ),
+    writer_mode: str = typer.Option(
+        "deterministic",
+        "--writer-mode",
+        help="Writer mode: 'deterministic' (default) or 'llm'.",
+    ),
+    verifier_mode: str = typer.Option(
+        "deterministic",
+        "--verifier-mode",
+        help="Verifier mode: 'deterministic' (default) or 'llm'.",
+    ),
 ) -> None:
     try:
         provider = build_source_provider(source_provider=source_provider, case_id=case_id)
@@ -44,15 +57,40 @@ def run(
         typer.echo(f"error_message={error}")
         raise typer.Exit(code=1)
 
+    # Resolve Writer/Verifier modes (env var can override default CLI values)
+    resolved_writer = resolve_mode(writer_mode, "WRITER")
+    resolved_verifier = resolve_mode(verifier_mode, "VERIFIER")
+
+    # Build LLM provider if configured
+    llm_provider = None
+    llm_config = LLMProviderConfig.from_env()
+    if llm_config.is_configured():
+        llm_provider = DeepSeekProvider(
+            api_key=llm_config.api_key,
+            model=llm_config.model,
+            base_url=llm_config.base_url,
+            timeout_seconds=llm_config.timeout_seconds,
+            max_tokens=llm_config.max_tokens,
+            temperature=llm_config.temperature,
+        )
+
     try:
         if source_provider == "fixture":
-            result = ResearchHarness().run_fixture(
+            result = ResearchHarness(
+                writer_mode=resolved_writer,
+                verifier_mode=resolved_verifier,
+                llm_provider=llm_provider,
+            ).run_fixture(
                 query=query,
                 case_id=case_id,
                 output_dir=output_dir,
             )
         else:
-            result = ResearchHarness().run(
+            result = ResearchHarness(
+                writer_mode=resolved_writer,
+                verifier_mode=resolved_verifier,
+                llm_provider=llm_provider,
+            ).run(
                 query=query,
                 source_provider=provider,
                 output_dir=output_dir,

@@ -184,7 +184,7 @@ Every task uses this format:
 
 ### 5.1 Mode Selection Logic
 
-- [ ] T018 [P1] 先写 test: `test_mode_selection.py` — 覆盖：
+- [x] T018 [P1] 先写 test: `test_mode_selection.py` — 覆盖：
   - 环境变量 `TRACERESEARCH_WRITER_MODE=llm` + key 存在 → 构建 `LLMWriter`
   - 环境变量 `TRACERESEARCH_VERIFIER_MODE=llm` + key 存在 → 构建 `LLMVerifier`
   - 环境变量 mode=llm 但 key 缺失 → fallback deterministic + WARNING
@@ -195,26 +195,26 @@ Every task uses this format:
   - Tests: `python3 -m pytest tests/unit/test_mode_selection.py -v`
   - Related files: `tests/unit/test_mode_selection.py`
 
-- [ ] T019 [P1] 实现 `build_writer(mode, llm_provider)` / `build_verifier(mode, llm_provider)` factory functions in `traceresearch/harness/mode_factory.py`
+- [x] T019 [P1] 实现 `build_writer(mode, llm_provider)` / `build_verifier(mode, llm_provider)` factory functions in `traceresearch/harness/mode_factory.py`
   - DoD: T018 全部 pass；factory 返回正确的 WriterProtocol/VerifierProtocol 实例
   - Tests: `python3 -m pytest tests/unit/test_mode_selection.py -v`
   - Related files: `traceresearch/harness/mode_factory.py`
 
 ### 5.2 CLI Integration
 
-- [ ] T020 [P1] 在 `cli.py` 新增 `--writer-mode` (choices: deterministic|llm, default: deterministic) 和 `--verifier-mode` (choices: deterministic|llm, default: deterministic) 两个 CLI options；传递到 Harness
+- [x] T020 [P1] 在 `cli.py` 新增 `--writer-mode` (choices: deterministic|llm, default: deterministic) 和 `--verifier-mode` (choices: deterministic|llm, default: deterministic) 两个 CLI options；传递到 Harness
   - DoD: `traceresearch run --help` 显示新选项；`traceresearch run --writer-mode llm` 不报参数错误
   - Tests: `python3 -m pytest tests/integration/test_cli_llm_modes.py -v`
   - Related files: `traceresearch/cli.py`
 
-- [ ] T021 [P1] 更新 `ResearchHarness.__init__` — 接收 `writer_mode` 和 `verifier_mode` 参数，调用 `mode_factory` 构建对应实例；保留 `writer=` / `verifier=` kwarg（直接注入，优先于 mode）
+- [x] T021 [P1] 更新 `ResearchHarness.__init__` — 接收 `writer_mode` 和 `verifier_mode` 参数，调用 `mode_factory` 构建对应实例；保留 `writer=` / `verifier=` kwarg（直接注入，优先于 mode）
   - DoD: Harness 可以通过 mode string 或直接实例构建；现有 tests 无修改仍然 pass
   - Tests: `python3 -m pytest tests/unit/test_harness.py tests/integration/ -v --ignore=tests/llm_smoke`
   - Related files: `traceresearch/harness/orchestrator.py`
 
 ### 5.3 Harness Integration Tests
 
-- [ ] T022 [P1] [US3] 先写 integration test: `test_llm_harness_integration.py` — mock LLM + fixture evidence → 完整 harness run：
+- [x] T022 [P1] [US3] 先写 integration test: `test_llm_harness_integration.py` — mock LLM + fixture evidence → 完整 harness run：
   - `writer_mode=llm` → 产出 `final_report.md`，包含 evidence IDs
   - `verifier_mode=llm` → 产出 `verification.json`，包含 reasoning notes
   - both modes=llm → 完整 end-to-end

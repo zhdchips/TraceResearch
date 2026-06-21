@@ -11,8 +11,8 @@ from uuid import uuid4
 from traceresearch.agents.critic import Critic
 from traceresearch.agents.planner import Planner
 from traceresearch.agents.researcher import Researcher
-from traceresearch.agents.verifier import Verifier
-from traceresearch.agents.writer import Writer
+from traceresearch.agents.verifier_protocol import VerifierProtocol
+from traceresearch.agents.writer_protocol import WriterProtocol
 from traceresearch.evidence.models import (
     Evidence,
     EvidenceStatus,
@@ -21,6 +21,8 @@ from traceresearch.evidence.models import (
 )
 from traceresearch.evidence.store import EvidenceStore
 from traceresearch.harness.artifacts import RunArtifacts
+from traceresearch.harness.mode_factory import build_verifier, build_writer
+from traceresearch.llm.provider import LLMProvider
 from traceresearch.source_discovery.base import SourceDiscoveryError, SourceDiscoveryProvider
 from traceresearch.source_discovery.fixture_provider import FixtureSourceProvider
 from traceresearch.trace.models import AgentRole, ErrorInfo, EventType, TraceEvent, TraceStatus
@@ -41,15 +43,27 @@ class ResearchHarness:
         *,
         planner: Planner | None = None,
         researcher: Researcher | None = None,
-        verifier: Verifier | None = None,
+        verifier: VerifierProtocol | None = None,
         critic: Critic | None = None,
-        writer: Writer | None = None,
+        writer: WriterProtocol | None = None,
+        writer_mode: str = "deterministic",
+        verifier_mode: str = "deterministic",
+        llm_provider: LLMProvider | None = None,
     ) -> None:
         self.planner = planner or Planner()
         self.researcher = researcher or Researcher()
-        self.verifier = verifier or Verifier()
         self.critic = critic or Critic()
-        self.writer = writer or Writer()
+
+        # Direct injection takes priority over mode-based construction
+        if writer is not None:
+            self.writer = writer
+        else:
+            self.writer = build_writer(mode=writer_mode, llm_provider=llm_provider)
+
+        if verifier is not None:
+            self.verifier = verifier
+        else:
+            self.verifier = build_verifier(mode=verifier_mode, llm_provider=llm_provider)
 
     def run(
         self,
