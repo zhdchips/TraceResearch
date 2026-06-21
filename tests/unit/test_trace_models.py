@@ -79,6 +79,8 @@ def test_all_agent_roles_are_available() -> None:
     assert {role.value for role in AgentRole} == {
         "Planner",
         "Researcher",
+        "ResearchLead",
+        "ResearchSubagent",
         "Verifier",
         "Critic",
         "Writer",

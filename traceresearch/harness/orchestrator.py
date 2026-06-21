@@ -9,6 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from traceresearch.agents.critic import Critic
+from traceresearch.agents.lead_researcher import LeadResearchAgent
 from traceresearch.agents.llm_verifier import LLMVerifier
 from traceresearch.agents.llm_writer import LLMWriter
 from traceresearch.agents.planner import Planner
@@ -52,15 +53,20 @@ class ResearchHarness:
         *,
         planner: Planner | None = None,
         researcher: Researcher | None = None,
+        lead_researcher: LeadResearchAgent | None = None,
         verifier: VerifierProtocol | None = None,
         critic: Critic | None = None,
         writer: WriterProtocol | None = None,
         writer_mode: str = "deterministic",
         verifier_mode: str = "deterministic",
         llm_provider: LLMProvider | None = None,
+        max_concurrent_research_tasks: int | None = None,
     ) -> None:
         self.planner = planner or Planner()
         self.researcher = researcher or Researcher()
+        self.lead_researcher = lead_researcher or LeadResearchAgent(
+            max_concurrent=max_concurrent_research_tasks,
+        )
         self.critic = critic or Critic()
 
         # Direct injection takes priority over mode-based construction
@@ -167,65 +173,44 @@ class ResearchHarness:
             AgentRole.RESEARCHER,
             EventType.START,
             "research tasks",
-            "source discovery",
+            "source discovery via subagent executor",
         )
-        stored_evidence: list[Evidence] = []
-        sequence = 1
-        for task in brief.research_tasks:
-            try:
-                task_evidence = self.researcher.research(
-                    run_id=run_id,
-                    task=task,
-                    provider=provider,
-                    start_index=sequence,
-                )
-            except SourceDiscoveryError as error:
-                trace.record(
-                    AgentRole.RESEARCHER,
-                    EventType.ERROR,
-                    task.query,
-                    f"provider_step={provider_tool_name}; failed with {error.code}",
-                    task_id=task.research_task_id,
-                    tool_name=provider_tool_name,
-                    status=TraceStatus.FAILED,
-                    error=_trace_error(error),
-                )
-                trace.record(
-                    AgentRole.HARNESS,
-                    EventType.FINISH,
-                    "failed run",
-                    f"status=failed; error_type={error.code}",
-                    status=TraceStatus.FAILED,
-                    error=_trace_error(error),
-                )
-                return RunResult(
-                    run_id=run_id,
-                    status=ResearchRunStatus.FAILED,
-                    artifact_dir=artifacts.run_dir,
-                    final_report_path=None,
-                )
-            sequence += len(task_evidence)
-            for item in task_evidence:
-                stored = evidence_store.add(item)
-                if stored.evidence_id not in {existing.evidence_id for existing in stored_evidence}:
-                    stored_evidence.append(stored)
-            trace.record(
-                AgentRole.RESEARCHER,
-                EventType.TOOL_RESULT,
-                task.query,
-                f"provider_step={provider_tool_name}; "
-                f"result_count={len(task_evidence)}; "
-                "evidence_ids="
-                + ",".join(item.evidence_id for item in task_evidence),
-                task_id=task.research_task_id,
-                tool_name=provider_tool_name,
-            )
+        stored_evidence: list[Evidence] = self.lead_researcher.conduct_research(
+            brief=brief,
+            provider=provider,
+            run_id=run_id,
+            run_dir=artifacts.run_dir,
+            trace_writer=trace.writer,
+            provider_tool_name=provider_tool_name,
+        )
         trace.record(
             AgentRole.RESEARCHER,
             EventType.FINISH,
             f"{provider.provider_name} provider results",
             f"stored {len(stored_evidence)} evidence candidates",
         )
+
+        # All-failure detection: if tasks existed but no evidence was collected,
+        # treat as a failed run (partial failure policy still allows 0-evidence
+        # but the run should surface the failure).
+        if brief.research_tasks and not stored_evidence:
+            trace.record(
+                AgentRole.HARNESS,
+                EventType.FINISH,
+                "failed run — no evidence collected",
+                "status=failed; all research tasks failed or timed out",
+                status=TraceStatus.FAILED,
+                error=ErrorInfo(
+                    type="AllResearchTasksFailed",
+                    message="All research tasks failed or timed out — no evidence collected",
+                ),
+            )
+            return RunResult(
+                run_id=run_id,
+                status=ResearchRunStatus.FAILED,
+                artifact_dir=artifacts.run_dir,
+                final_report_path=None,
+            )
 
         trace.record(
             AgentRole.HARNESS,

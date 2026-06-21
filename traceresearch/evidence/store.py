@@ -93,7 +93,12 @@ class EvidenceStore:
                 file.write("\n")
 
 
-def _dedupe_key(evidence: Evidence) -> tuple[str, str]:
+def dedupe_key(evidence: Evidence) -> tuple[str, str]:
+    """Return a stable deduplication key for an Evidence record.
+
+    URL-based sources use the normalized URL. Fixture sources use
+    title|publisher|retrieval_date.
+    """
     source = evidence.source
     if source.url is not None:
         normalized_url = str(source.url).rstrip("/")
@@ -103,3 +108,7 @@ def _dedupe_key(evidence: Evidence) -> tuple[str, str]:
     title = source.title.strip().lower()
     retrieved_date = source.retrieved_at.date().isoformat()
     return ("fixture", f"{title}|{publisher}|{retrieved_date}")
+
+
+def _dedupe_key(evidence: Evidence) -> tuple[str, str]:
+    return dedupe_key(evidence)

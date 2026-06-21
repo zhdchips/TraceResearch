@@ -15,6 +15,8 @@ class TraceModel(BaseModel):
 class AgentRole(StrEnum):
     PLANNER = "Planner"
     RESEARCHER = "Researcher"
+    RESEARCH_LEAD = "ResearchLead"
+    RESEARCH_SUBAGENT = "ResearchSubagent"
     VERIFIER = "Verifier"
     CRITIC = "Critic"
     WRITER = "Writer"
@@ -53,6 +55,7 @@ class TraceEvent(TraceModel):
     trace_id: str = Field(min_length=1)
     run_id: str = Field(min_length=1)
     task_id: str | None = None
+    subagent_id: str | None = None
     agent_role: AgentRole
     event_type: EventType
     tool_name: str | None = None

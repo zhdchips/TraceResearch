@@ -209,6 +209,7 @@ class CritiqueResult(StrictModel):
     limitations_to_add: list[str]
     decision: CritiqueDecision
     next_phase: NextPhase
+    failed_task_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def failing_decisions_do_not_complete(self) -> "CritiqueResult":
