@@ -295,24 +295,24 @@ Every task uses this format:
 
 ### 8.1 Regression Verification
 
-- [ ] T030 [P0] [US3] 运行 fixture eval regression —— 验证 `traceresearch eval` 5/5 pass，Output Determinism=1.0，9 metrics 正常输出
+- [x] T030 [P0] [US3] 运行 fixture eval regression —— 验证 `traceresearch eval` 5/5 pass，Output Determinism=1.0，9 metrics 正常输出
   - DoD: `case_pass_rate=1.0`，无任何 regression
   - Tests: `traceresearch eval` && `python3 -m pytest`
   - Related files: N/A（验证任务）
 
-- [ ] T031 [P0] [US3] 运行 live web provider path 验证 —— `traceresearch run --source-provider web --query "test"` 行为与 002 基线一致（expect `provider_not_configured` 或成功 run），不受 LLM 配置影响
+- [x] T031 [P0] [US3] 运行 live web provider path 验证 —— `traceresearch run --source-provider web --query "test"` 行为与 002 基线一致（expect `provider_not_configured` 或成功 run），不受 LLM 配置影响
   - DoD: live provider path 不因 LLM mode 环境变量存在而改变行为
   - Tests: `python3 -m pytest tests/integration/test_run_web_provider.py tests/integration/test_web_unconfigured_failure.py -v`
   - Related files: N/A（验证任务）
 
 ### 8.2 Documentation
 
-- [ ] T032 [P2] 更新 `.env.example` — 添加 LLM 配置项：`TRACERESEARCH_LLM_PROVIDER`、`TRACERESEARCH_LLM_API_KEY`、`TRACERESEARCH_LLM_MODEL`、`TRACERESEARCH_WRITER_MODE`、`TRACERESEARCH_VERIFIER_MODE`，均使用占位符
+- [x] T032 [P2] 更新 `.env.example` — 添加 LLM 配置项：`TRACERESEARCH_LLM_PROVIDER`、`TRACERESEARCH_LLM_API_KEY`、`TRACERESEARCH_LLM_MODEL`、`TRACERESEARCH_WRITER_MODE`、`TRACERESEARCH_VERIFIER_MODE`，均使用占位符
   - DoD: `.env.example` 包含 LLM 配置 section，无真实 key
   - Tests: `grep -c "TRACERESEARCH_LLM" .env.example` 返回 >= 3
   - Related files: `.env.example`
 
-- [ ] T033 [P2] 更新 `README.md` — 添加 LLM Mode 使用说明：
+- [x] T033 [P2] 更新 `README.md` — 添加 LLM Mode 使用说明：
   - 配置 LLM provider 的方式（环境变量）
   - `--writer-mode` / `--verifier-mode` 用法
   - LLM smoke eval 触发方式
@@ -324,12 +324,12 @@ Every task uses this format:
 
 ### 8.3 Eval & Review Artifacts
 
-- [ ] T034 [P1] 撰写 `eval.md` —— 记录 LLM smoke eval 结果（如无 LLM key 则记录未执行原因和手动验收命令）
+- [x] T034 [P1] 撰写 `eval.md` —— 记录 LLM smoke eval 结果（如无 LLM key 则记录未执行原因和手动验收命令）
   - DoD: `eval.md` 包含至少 1 条 smoke eval 记录或 skip reason
   - Tests: `cat specs/003-llm-backed-writer-verifier/eval.md`
   - Related files: `specs/003-llm-backed-writer-verifier/eval.md`
 
-- [ ] T035 [P1] 撰写 `review.md` —— 对照 spec.md 的 Success Criteria 和 Quality Gates 逐项检查，记录 review decision 和 next_phase
+- [x] T035 [P1] 撰写 `review.md` —— 对照 spec.md 的 Success Criteria 和 Quality Gates 逐项检查，记录 review decision 和 next_phase
   - DoD: `review.md` 包含 decision + next_phase
   - Tests: `cat specs/003-llm-backed-writer-verifier/review.md`
   - Related files: `specs/003-llm-backed-writer-verifier/review.md`

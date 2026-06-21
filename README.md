@@ -90,6 +90,70 @@ traceresearch run \
 
 Expected output includes `status=failed` and `error_type=provider_not_configured`, with no silent fallback to Fixture.
 
+## LLM-backed Writer / Verifier (Feature 003)
+
+The deterministic Writer and Verifier can optionally be replaced with LLM-backed implementations for more natural report generation and semantic claim verification.
+
+### Default: Deterministic Mode
+
+```bash
+# No configuration needed — deterministic Writer/Verifier is the default.
+traceresearch run --query "Your research question" --source-provider fixture --case-id 001-framework-comparison --output-dir runs
+```
+
+### LLM Writer Mode
+
+```bash
+# Configure LLM provider (see .env.example)
+export DEEPSEEK_API_KEY="sk-..."
+# Optional: export TRACERESEARCH_WRITER_MODE=llm
+
+traceresearch run \
+  --query "Your research question" \
+  --source-provider fixture \
+  --case-id 001-framework-comparison \
+  --writer-mode llm \
+  --output-dir runs
+```
+
+### LLM Verifier Mode
+
+```bash
+traceresearch run \
+  --query "Your research question" \
+  --source-provider fixture \
+  --case-id 001-framework-comparison \
+  --verifier-mode llm \
+  --output-dir runs
+```
+
+### Both LLM Modes
+
+```bash
+traceresearch run \
+  --query "Your research question" \
+  --source-provider fixture \
+  --case-id 001-framework-comparison \
+  --writer-mode llm \
+  --verifier-mode llm \
+  --output-dir runs
+```
+
+**Key behaviors**:
+
+- Without API key, mode "llm" auto-falls-back to deterministic.
+- LLM provider failure (timeout, rate limit, invalid response) also safely falls back to deterministic.
+- Trace records `llm_mode`, `llm_model`, `llm_token_usage`, and `failover_reason`.
+
+### LLM Smoke Eval (Manual Only)
+
+```bash
+# LLM smoke eval is manual — it is NOT part of default pytest/CI.
+traceresearch llm-smoke
+```
+
+Without API key, it runs deterministic baseline; with key, it uses the real LLM.
+
 ## Secret Handling
 
 Use `.env.example` as the template, but keep real credentials in your local shell or ignored `.env`.
@@ -154,7 +218,7 @@ rg "fixture.search|exa.search|web_search|provider_" "$RUN_DIR/trace.jsonl"
 ## Limitations
 
 - No Web UI.
-- No LLM-backed agents in this feature.
+- LLM-backed Writer and Verifier are opt-in; Planner and Researcher remain deterministic.
 - No PDF or HTML export.
 - No large benchmark or live web CI gate.
 - Fixture eval remains the deterministic quality signal.
@@ -170,3 +234,5 @@ rg "fixture.search|exa.search|web_search|provider_" "$RUN_DIR/trace.jsonl"
 5. Run fixture eval with `traceresearch eval --cases-dir eval/cases --source-provider fixture --results-dir eval/results`.
 6. If an Exa key is configured, run the Live web demo with `--source-provider web`.
 7. If no key is configured, run the unconfigured failure demo and show `provider_not_configured`.
+8. If a DeepSeek API key is configured, run `--writer-mode llm` and compare the report quality.
+9. Run `traceresearch llm-smoke` to verify LLM smoke eval infrastructure.
