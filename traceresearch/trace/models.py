@@ -62,6 +62,11 @@ class TraceEvent(TraceModel):
     latency_ms: int = Field(ge=0)
     token_usage: TokenUsage | None = None
     error: ErrorInfo | None = None
+    # LLM-specific observability fields (all None by default for backward compat)
+    llm_mode: str | None = None
+    llm_model: str | None = None
+    llm_token_usage: TokenUsage | None = None
+    failover_reason: str | None = None
     created_at: datetime
 
     @model_validator(mode="after")

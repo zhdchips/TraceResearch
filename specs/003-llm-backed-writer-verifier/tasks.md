@@ -232,7 +232,7 @@ Every task uses this format:
 
 ### 6.1 Trace Model Extension
 
-- [ ] T023 [P1] [US3] 先写 test: `test_trace_llm_fields.py` — 覆盖：
+- [x] T023 [P1] [US3] 先写 test: `test_trace_llm_fields.py` — 覆盖：
   - `TraceEvent` 支持 `llm_mode`, `llm_model`, `llm_token_usage`, `failover_reason` 可选字段
   - 现有 TraceEvent 不设置这些字段仍然正常序列化/反序列化（向后兼容）
   - `llm_mode` 值限于 `"llm"` | `"deterministic"` | `None`
@@ -242,14 +242,14 @@ Every task uses this format:
   - Tests: `python3 -m pytest tests/unit/test_trace_llm_fields.py -v`
   - Related files: `tests/unit/test_trace_llm_fields.py`
 
-- [ ] T024 [P1] [US3] 扩展 `traceresearch/trace/models.py` — 给 `TraceEvent` 添加 `llm_mode`, `llm_model`, `llm_token_usage`, `failover_reason` 四个 Optional 字段（默认 None，向后兼容）
+- [x] T024 [P1] [US3] 扩展 `traceresearch/trace/models.py` — 给 `TraceEvent` 添加 `llm_mode`, `llm_model`, `llm_token_usage`, `failover_reason` 四个 Optional 字段（默认 None，向后兼容）
   - DoD: T023 pass；`test_trace_writer.py` 和 `test_trace_models.py` 继续 pass
   - Tests: `python3 -m pytest tests/unit/test_trace_llm_fields.py tests/unit/test_trace_writer.py tests/unit/test_trace_models.py -v`
   - Related files: `traceresearch/trace/models.py`
 
 ### 6.2 Harness Trace Recording
 
-- [ ] T025 [P1] [US3] 更新 `orchestrator.py` 中的 `_TraceRecorder` — 支持记录 LLM 相关字段到 TraceEvent。在 LLM Writer/Verifier 调用前后写入 LLM START/TOOL_CALL/TOOL_RESULT/WARNING 事件
+- [x] T025 [P1] [US3] 更新 `orchestrator.py` 中的 `_TraceRecorder` — 支持记录 LLM 相关字段到 TraceEvent。在 LLM Writer/Verifier 调用前后写入 LLM START/TOOL_CALL/TOOL_RESULT/WARNING 事件
   - DoD: LLM run 的 `trace.jsonl` 包含 `llm_mode`, `llm_model`, `llm_token_usage`；failover run 包含 `failover_reason`
   - Tests: `python3 -m pytest tests/integration/test_llm_harness_integration.py -v`（检查 trace 内容）
   - Related files: `traceresearch/harness/orchestrator.py`

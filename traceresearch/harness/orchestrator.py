@@ -9,6 +9,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from traceresearch.agents.critic import Critic
+from traceresearch.agents.llm_verifier import LLMVerifier
+from traceresearch.agents.llm_writer import LLMWriter
 from traceresearch.agents.planner import Planner
 from traceresearch.agents.researcher import Researcher
 from traceresearch.agents.verifier_protocol import VerifierProtocol
@@ -25,7 +27,14 @@ from traceresearch.harness.mode_factory import build_verifier, build_writer
 from traceresearch.llm.provider import LLMProvider
 from traceresearch.source_discovery.base import SourceDiscoveryError, SourceDiscoveryProvider
 from traceresearch.source_discovery.fixture_provider import FixtureSourceProvider
-from traceresearch.trace.models import AgentRole, ErrorInfo, EventType, TraceEvent, TraceStatus
+from traceresearch.trace.models import (
+    AgentRole,
+    ErrorInfo,
+    EventType,
+    TokenUsage,
+    TraceEvent,
+    TraceStatus,
+)
 from traceresearch.trace.writer import TraceWriter
 
 
@@ -241,11 +250,18 @@ class ResearchHarness:
             f"drafted {len(draft.claims)} claims",
         )
 
+        _verifier_is_llm = isinstance(self.verifier, LLMVerifier)
+        _verifier_llm_mode = "llm" if _verifier_is_llm else "deterministic"
+        _verifier_llm_model = (
+            self.verifier._provider.model if _verifier_is_llm else None  # type: ignore[union-attr]
+        )
         trace.record(
             AgentRole.VERIFIER,
             EventType.START,
             "draft claims",
             "verifying claim support",
+            llm_mode=_verifier_llm_mode,
+            llm_model=_verifier_llm_model,
         )
         verification = self.verifier.verify(
             run_id=run_id,
@@ -272,6 +288,8 @@ class ResearchHarness:
             EventType.FINISH,
             "draft claims",
             f"verified {len(verification.claim_results)} claims",
+            llm_mode=_verifier_llm_mode,
+            llm_model=_verifier_llm_model,
         )
 
         trace.record(
@@ -293,11 +311,18 @@ class ResearchHarness:
             f"decision={critique.decision.value}",
         )
 
+        _writer_is_llm = isinstance(self.writer, LLMWriter)
+        _writer_llm_mode = "llm" if _writer_is_llm else "deterministic"
+        _writer_llm_model = (
+            self.writer._provider.model if _writer_is_llm else None  # type: ignore[union-attr]
+        )
         trace.record(
             AgentRole.WRITER,
             EventType.START,
             "verified evidence",
             "writing final report",
+            llm_mode=_writer_llm_mode,
+            llm_model=_writer_llm_model,
         )
         final_report = self.writer.final(
             brief=brief,
@@ -305,6 +330,13 @@ class ResearchHarness:
             verification=verification,
             critique=critique,
         )
+        # Record LLM token usage if available
+        _writer_llm_usage = None
+        if _writer_is_llm:
+            try:
+                _writer_llm_usage = self.writer._provider.last_token_usage  # type: ignore[union-attr]
+            except AttributeError:
+                pass
         artifacts.final_report.write_text(final_report.markdown, encoding="utf-8")
         _write_json(artifacts.report_json, final_report.report_json)
         trace.record(
@@ -312,6 +344,9 @@ class ResearchHarness:
             EventType.FINISH,
             "final report",
             "wrote final_report.md and report.json",
+            llm_mode=_writer_llm_mode,
+            llm_model=_writer_llm_model,
+            llm_token_usage=_writer_llm_usage,
         )
 
         run = ResearchRun(
@@ -355,6 +390,12 @@ class _TraceRecorder:
         tool_name: str | None = None,
         status: TraceStatus = TraceStatus.SUCCESS,
         error: ErrorInfo | None = None,
+        latency_ms: int = 0,
+        token_usage: TokenUsage | None = None,
+        llm_mode: str | None = None,
+        llm_model: str | None = None,
+        llm_token_usage: TokenUsage | None = None,
+        failover_reason: str | None = None,
     ) -> None:
         event = TraceEvent(
             trace_id=f"TR-{self.run_id}-{self.sequence:03d}",
@@ -366,8 +407,13 @@ class _TraceRecorder:
             input_summary=input_summary,
             output_summary=output_summary,
             status=status,
-            latency_ms=0,
+            latency_ms=latency_ms,
+            token_usage=token_usage,
             error=error,
+            llm_mode=llm_mode,
+            llm_model=llm_model,
+            llm_token_usage=llm_token_usage,
+            failover_reason=failover_reason,
             created_at=datetime.now(timezone.utc),
         )
         self.writer.append(event)
