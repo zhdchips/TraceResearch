@@ -28,48 +28,48 @@ Every task uses this format:
 
 ### 1.1 Config & Dependencies
 
-- [ ] T001 [P0] 添加 `httpx` 依赖到 `pyproject.toml`，并更新 lock/install
+- [x] T001 [P0] 添加 `httpx` 依赖到 `pyproject.toml`，并更新 lock/install
   - DoD: `import httpx` 成功，`pip install -e ".[dev]"` 无报错
   - Tests: `python3 -c "import httpx; print(httpx.__version__)"`
   - Related files: `pyproject.toml`
 
-- [ ] T002 [P0] 实现 `LLMProviderConfig` — 从环境变量读取 LLM 配置，含 provider name、api_key、model、base_url、timeout、max_tokens、temperature
+- [x] T002 [P0] 实现 `LLMProviderConfig` — 从环境变量读取 LLM 配置，含 provider name、api_key、model、base_url、timeout、max_tokens、temperature
   - DoD: `LLMProviderConfig.from_env()` 返回完整配置；无 key 时 `api_key=""` 不抛异常
   - Tests: `python3 -m pytest tests/unit/test_llm_config.py -v`
   - Related files: `traceresearch/llm/__init__.py`, `traceresearch/llm/config.py`, `tests/unit/test_llm_config.py`
 
 ### 1.2 LLMProvider Protocol + Error Model
 
-- [ ] T003 [P0] 先写 test: `test_llm_provider_protocol.py` — 覆盖 ABC 不可直接实例化、`complete()` 签名、`LLMProviderError` 属性
+- [x] T003 [P0] 先写 test: `test_llm_provider_protocol.py` — 覆盖 ABC 不可直接实例化、`complete()` 签名、`LLMProviderError` 属性
   - DoD: tests 文件存在，覆盖 protocol contract 的所有约束
   - Tests: `python3 -m pytest tests/unit/test_llm_provider_protocol.py -v`
   - Related files: `tests/unit/test_llm_provider_protocol.py`
 
-- [ ] T004 [P0] 实现 `LLMProvider` ABC + `LLMProviderError` — provider_name (property)、model (property)、`complete(prompt, response_schema, system_prompt=None) -> BaseModel`
+- [x] T004 [P0] 实现 `LLMProvider` ABC + `LLMProviderError` — provider_name (property)、model (property)、`complete(prompt, response_schema, system_prompt=None) -> BaseModel`
   - DoD: ABC 不可实例化；`LLMProviderError(reason, provider, model, latency_ms)` 包含所有必需属性；子类未实现 abstract method 报 TypeError
   - Tests: `python3 -m pytest tests/unit/test_llm_provider_protocol.py -v`
   - Related files: `traceresearch/llm/provider.py`
 
 ### 1.3 DeepSeekProvider
 
-- [ ] T005 [P0] 先写 test: `test_deepseek_provider.py` — 用 `pytest.httpx` (或 `respx`) mock HTTP，覆盖：正常 response 解析、timeout、HTTP 4xx/5xx、rate limit 429、invalid JSON response
+- [x] T005 [P0] 先写 test: `test_deepseek_provider.py` — 用 `pytest.httpx` (或 `respx`) mock HTTP，覆盖：正常 response 解析、timeout、HTTP 4xx/5xx、rate limit 429、invalid JSON response
   - DoD: test 文件包含 5+ 个 mock scenario，不发起真实网络请求
   - Tests: `python3 -m pytest tests/unit/test_deepseek_provider.py -v`
   - Related files: `tests/unit/test_deepseek_provider.py`
 
-- [ ] T006 [P0] 实现 `DeepSeekProvider` — 实现 `LLMProvider`，用 `httpx` POST `/v1/chat/completions`，解析 OpenAI-compatible response，调用 `response_schema.model_validate_json()` 后返回
+- [x] T006 [P0] 实现 `DeepSeekProvider` — 实现 `LLMProvider`，用 `httpx` POST `/v1/chat/completions`，解析 OpenAI-compatible response，调用 `response_schema.model_validate_json()` 后返回
   - DoD: T005 全部 mock tests pass；response 解析失败抛 `LLMProviderError(reason="invalid_response")`；HTTP timeout 抛 `LLMProviderError(reason="timeout")`；HTTP 429 抛 `LLMProviderError(reason="rate_limit")`
   - Tests: `python3 -m pytest tests/unit/test_deepseek_provider.py -v`
   - Related files: `traceresearch/llm/deepseek_provider.py`
 
 ### 1.4 LLM Output Schemas
 
-- [ ] T007 [P0] 先写 test: `test_llm_schemas.py` — 覆盖 `LLMFinalReportSchema` / `LLMFindingSchema` / `LLMVerificationResultSchema` / `LLMClaimJudgmentSchema` 的 valid/invalid JSON 解析、required field 缺失、extra field 拒绝、enum value 验证
+- [x] T007 [P0] 先写 test: `test_llm_schemas.py` — 覆盖 `LLMFinalReportSchema` / `LLMFindingSchema` / `LLMVerificationResultSchema` / `LLMClaimJudgmentSchema` 的 valid/invalid JSON 解析、required field 缺失、extra field 拒绝、enum value 验证
   - DoD: test 覆盖所有 4 个 schema 的 happy path 和至少 3 种 validation failure
   - Tests: `python3 -m pytest tests/unit/test_llm_schemas.py -v`
   - Related files: `tests/unit/test_llm_schemas.py`
 
-- [ ] T008 [P0] 实现 `traceresearch/llm/schemas.py` — 定义 `LLMFinalReportSchema`、`LLMFindingSchema`、`LLMVerificationResultSchema`、`LLMClaimJudgmentSchema`（Pydantic BaseModel，`extra="forbid"`）
+- [x] T008 [P0] 实现 `traceresearch/llm/schemas.py` — 定义 `LLMFinalReportSchema`、`LLMFindingSchema`、`LLMVerificationResultSchema`、`LLMClaimJudgmentSchema`（Pydantic BaseModel，`extra="forbid"`）
   - DoD: T007 全部 tests pass；所有 schema 使用 `StrictModel` 或 `extra="forbid"`；`confidence` 用 `Literal["high","medium","low"]`；`support_status` 用 `Literal["supported","weakly_supported","unsupported","conflicting"]`
   - Tests: `python3 -m pytest tests/unit/test_llm_schemas.py -v`
   - Related files: `traceresearch/llm/schemas.py`
