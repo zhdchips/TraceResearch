@@ -13,6 +13,7 @@ from traceresearch.evidence.models import (
     VerificationResult,
 )
 from traceresearch.reports.renderer import render_evidence_references
+from traceresearch.agents.writer_protocol import WriterProtocol
 
 
 @dataclass(frozen=True)
@@ -28,7 +29,7 @@ class FinalReport:
     report_json: dict[str, object]
 
 
-class Writer:
+class Writer(WriterProtocol):
     def draft(self, *, brief: ResearchBrief, evidence: list[Evidence]) -> DraftReport:
         outline = self._outline(brief)
         claims: list[Claim] = []
@@ -175,3 +176,7 @@ def _unique(items) -> list[str]:
         seen.add(item)
         result.append(item)
     return result
+
+
+# Backward-compatible alias — deterministic Writer is the canonical Writer.
+DeterministicWriter = Writer

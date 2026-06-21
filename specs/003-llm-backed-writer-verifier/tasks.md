@@ -82,31 +82,31 @@ Every task uses this format:
 
 ### 2.1 WriterProtocol
 
-- [ ] T009 [P1] 先写 test: `test_writer_protocol.py` — 验证 `Writer` 满足 `WriterProtocol`（`isinstance` 检查、方法签名匹配、`draft()` 返回 `DraftReport`、`final()` 返回 `FinalReport`）
+- [x] T009 [P1] 先写 test: `test_writer_protocol.py` — 验证 `Writer` 满足 `WriterProtocol`（`isinstance` 检查、方法签名匹配、`draft()` 返回 `DraftReport`、`final()` 返回 `FinalReport`）
   - DoD: test 覆盖 protocol conformance 检查
   - Tests: `python3 -m pytest tests/unit/test_writer_protocol.py -v`
   - Related files: `tests/unit/test_writer_protocol.py`
 
-- [ ] T010 [P1] 定义 `WriterProtocol` ABC — `draft(brief, evidence) -> DraftReport`、`final(brief, verified_evidence, verification, critique) -> FinalReport`
+- [x] T010 [P1] 定义 `WriterProtocol` ABC — `draft(brief, evidence) -> DraftReport`、`final(brief, verified_evidence, verification, critique) -> FinalReport`
   - DoD: T009 pass；`WriterProtocol` 是 ABC，不能直接实例化；现有 `Writer` 类通过 `isinstance(x, WriterProtocol)` 检查
   - Tests: `python3 -m pytest tests/unit/test_writer_protocol.py -v`
   - Related files: `traceresearch/agents/writer_protocol.py`, `traceresearch/agents/writer.py`
 
 ### 2.2 VerifierProtocol
 
-- [ ] T011 [P1] 先写 test: `test_verifier_protocol.py` — 验证 `Verifier` 满足 `VerifierProtocol`（`isinstance` 检查、`verify()` 签名匹配、返回 `VerificationResult`）
+- [x] T011 [P1] 先写 test: `test_verifier_protocol.py` — 验证 `Verifier` 满足 `VerifierProtocol`（`isinstance` 检查、`verify()` 签名匹配、返回 `VerificationResult`）
   - DoD: test 覆盖 protocol conformance 检查
   - Tests: `python3 -m pytest tests/unit/test_verifier_protocol.py -v`
   - Related files: `tests/unit/test_verifier_protocol.py`
 
-- [ ] T012 [P1] 定义 `VerifierProtocol` ABC — `verify(run_id, draft, evidence) -> VerificationResult`
+- [x] T012 [P1] 定义 `VerifierProtocol` ABC — `verify(run_id, draft, evidence) -> VerificationResult`
   - DoD: T011 pass；`VerifierProtocol` 是 ABC，不能直接实例化；现有 `Verifier` 类通过 `isinstance` 检查
   - Tests: `python3 -m pytest tests/unit/test_verifier_protocol.py -v`
   - Related files: `traceresearch/agents/verifier_protocol.py`, `traceresearch/agents/verifier.py`
 
 ### 2.3 Deterministic Compatibility
 
-- [ ] T013 [P1] 在 `writer.py` / `verifier.py` module 级别添加 `DeterministicWriter = Writer` 和 `DeterministicVerifier = Verifier` alias；确认无 LLM 配置时所有现有 tests pass
+- [x] T013 [P1] 在 `writer.py` / `verifier.py` module 级别添加 `DeterministicWriter = Writer` 和 `DeterministicVerifier = Verifier` alias；确认无 LLM 配置时所有现有 tests pass
   - DoD: `from traceresearch.agents.writer import DeterministicWriter` 可用；`python3 -m pytest` 100% pass
   - Tests: `python3 -m pytest tests/ -v --ignore=tests/llm_smoke`
   - Related files: `traceresearch/agents/writer.py`, `traceresearch/agents/verifier.py`

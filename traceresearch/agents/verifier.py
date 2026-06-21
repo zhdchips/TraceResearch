@@ -11,9 +11,10 @@ from traceresearch.evidence.models import (
     Evidence,
     VerificationResult,
 )
+from traceresearch.agents.verifier_protocol import VerifierProtocol
 
 
-class Verifier:
+class Verifier(VerifierProtocol):
     def verify(self, *, run_id: str, draft: DraftReport, evidence: list[Evidence]) -> VerificationResult:
         evidence_ids = {item.evidence_id for item in evidence}
         claim_results: list[Claim] = []
@@ -44,3 +45,7 @@ class Verifier:
             citation_completeness=citation_completeness,
             notes=["Deterministic fixture verifier checked claim evidence IDs."],
         )
+
+
+# Backward-compatible alias — deterministic Verifier is the canonical Verifier.
+DeterministicVerifier = Verifier
