@@ -50,7 +50,7 @@ LeadResearchAgent 收集所有 subagent 返回的 candidate evidence batches 后
 **Acceptance Scenarios**:
 
 1. **Given** 两个 subagents 返回了指向同一 URL 的 candidate evidence, **When** Lead Agent 执行 dedup, **Then** Evidence Store 中只包含一条 evidence 记录，且其 evidence ID 稳定可预测。
-2. **Given** subagents 返回了 5 条 candidate evidence, **When** Lead Agent 分配 evidence ID, **Then** ID 格式与当前 `EVD-{run_id}-{seq:03d}` 一致。
+2. **Given** subagents 返回了 5 条 candidate evidence, **When** Lead Agent 分配 evidence ID, **Then** ID 格式与当前 `EV-{run_id}-{seq:03d}` 一致。
 3. **Given** subagent 返回空的 candidate evidence batch, **When** Lead Agent 处理, **Then** 不写入空的 evidence 行，对应的 research task 在 trace 中标记为 no-results。
 
 ---
@@ -67,7 +67,7 @@ Trace 必须完整记录 research phase 的 subagent 执行细节：Lead Agent �
 
 1. **Given** research phase 启动, **When** Lead Agent 派发 tasks, **Then** Trace 包含 RESEARCH_LEAD START 事件，记录 task 数量和并发配置。
 2. **Given** subagent 开始执行, **When** 调用 source provider search/fetch, **Then** Trace 包含 RESEARCH_SUBAGENT START、TOOL_CALL、TOOL_RESULT 和 FINISH 事件，每条事件包含 task_id 和 subagent_id。
-3. **Given** subagent 执行超时或出错, **When** error 发生, **Then** Trace 包含 RESEARCH_SUBAGENT ERROR 事件，记录 error type、message、task_id 和 subagent_id。
+3. **Given** subagent 执行超时或出错, **When** error 发生, **Then** Trace 包含 RESEARCH_SUBAGENT FINISH status=FAILED 和 TOOL_RESULT error 事件，记录 error type、message、task_id 和 subagent_id。
 
 ---
 
@@ -83,7 +83,7 @@ Trace 必须完整记录 research phase 的 subagent 执行细节：Lead Agent �
 
 1. **Given** 3 个 research tasks 中 1 个产生 provider error, **When** Lead Agent 完成 evidence 收集, **Then** 2 个成功的 task 的 evidence 被写入 Evidence Store，失败的 task 在 Critic 的 missing_perspectives 中被标注。
 2. **Given** 所有 research tasks 都失败, **When** 没有 evidence 被收集, **Then** run 状态为 FAILED，Trace 记录所有 error 事件。
-3. **Given** subagent 超时, **When** timeout 触发, **Then** subagent 被标记为 timed_out，超时前的部分结果（如有）被保留。
+3. **Given** subagent 超时, **When** timeout 触发, **Then** subagent 被标记为 timed_out（当前实现不保留超时任务的部分结果；timeout 是 batch-level 等待窗口，非 per-task wall-clock timeout）。
 
 ---
 
@@ -124,7 +124,7 @@ Trace 必须完整记录 research phase 的 subagent 执行细节：Lead Agent �
 - **FR-004**: 系统 MUST 提供 `LeadResearchAgent` 类，替代当前 orchestrator 中内联的 researcher loop，负责：(a) 从 Planner 获取 research tasks，(b) 通过 SubagentExecutor 派发 tasks，(c) 收集 candidate evidence、(d) 统一 dedup 和分配 evidence ID、(e) 写入 Evidence Store、(f) 记录 Trace。
 - **FR-005**: `LeadResearchAgent` MUST 实现 `conduct_research()` 方法作为 task-tool-like flow 入口。第一版为 Python callable，不需要 LangChain tool schema。
 - **FR-006**: 每个 subagent 的上下文 MUST 被压缩：只包含 brief objective、当前 task 的 perspective/question、source provider reference、run metadata（run_id、created_at）。不得传入完整 harness 实例、Evidence Store、Writer 或 Verifier 引用。
-- **FR-007**: Subagent 返回的 evidence candidate MUST 使用与现有 `Evidence` 模型兼容的结构。Lead Agent 分配最终的 `evidence_id`（格式 `EVD-{run_id}-{seq:03d}`）和 `retrieval_date`。
+- **FR-007**: Subagent 返回的 evidence candidate MUST 使用与现有 `Evidence` 模型兼容的结构。Lead Agent 分配最终的 `evidence_id`（格式 `EV-{run_id}-{seq:03d}`）和 `retrieval_date`。
 - **FR-008**: Lead Agent 的 dedup MUST 复用 `EvidenceStore._dedupe_key()` 逻辑或等效算法，基于 URL（web）或 title/publisher/retrieval_date（fixture）去重。
 - **FR-009**: 系统 MUST 保持 partial failure policy：部分 subagents 失败时保留成功 subagent 的 evidence，将失败 task 信息传递给 Critic 和 Trace。
 - **FR-010**: Trace MUST 记录以下新事件：`RESEARCH_LEAD` 事件（开始/结束，含 task 数量和并发配置）、`RESEARCH_SUBAGENT` 事件（开始/结束，含 task_id、subagent_id、status、latency）、tool_call/tool_result 事件（在 subagent 上下文中记录 source provider 调用）。
@@ -142,13 +142,13 @@ Trace 必须完整记录 research phase 的 subagent 执行细节：Lead Agent �
 - **SubagentExecutor**: Bounded concurrency runtime。管理 `ThreadPoolExecutor`，接收 `list[ResearchTask]` 和 `subagent_factory` callable，并行执行 tasks，收集结果。支持 `max_workers`、`task_timeout` 配置。
 - **CandidateEvidenceBatch**: Subagent 返回的未 dedup、未分配正式 ID 的 evidence 候选集合。包含 `candidates: list[Evidence]`（evidence_id 为临时占位符）、`task_id`、`subagent_id`、`status`（success/partial/failed/timed_out）。
 - **ResearchTaskAgent**: 单个 subagent 的 callable。输入为 `CompressedResearchContext`（包含 brief summary、task、provider reference、run_id），输出为 `CandidateEvidenceBatch`。
-- **LeadResearchAgent**: 替代当前 orchestrator 中 researcher loop 的 agent。持有 `SubagentExecutor` 引用、`EvidenceStore` 引用、`TraceWriter` 引用。提供 `conduct_research(brief, provider, run_id, run_dir) -> list[Evidence]` 方法。
+- **LeadResearchAgent**: 替代当前 orchestrator 中 researcher loop 的 agent。持有 `SubagentExecutor` 引用、`EvidenceStore` 引用、`TraceWriter` 引用。提供 `conduct_research(brief, provider, run_id, run_dir) -> LeadResearchResult` 方法，返回 evidence list + failed_task_ids。
 - **CompressedResearchContext**: 传递给 subagent 的压缩上下文。包含 `brief_summary`（来自 ResearchBrief.objective 的摘要）、`task`（完整 ResearchTask）、`provider_name`（字符串）、`run_id`、`created_at`。不包含 Evidence Store、Writer、Verifier 或其他 harness 组件。
 - **SubagentStatus**: 枚举值：`success`、`partial`（部分 source 获取失败）、`failed`（全部失败）、`timed_out`。
 
 ### Deep Research / Agent Requirements
 
-- **Research Contract**: `conduct_research()` 方法接收 research brief 和 source provider，返回 `list[Evidence]`。这是 research phase 的唯一对外接口。内部 subagent 执行细节对外不可见。
+- **Research Contract**: `conduct_research()` 方法接收 research brief 和 source provider，返回 `LeadResearchResult`（含 `evidence: list[Evidence]` 和 `failed_task_ids: list[str]`）。这是 research phase 的唯一对外接口。内部 subagent 执行细节对外不可见。
 - **Agent Boundaries**: `LeadResearchAgent` 负责 orchestration、dedup、evidence ID 分配、Evidence Store 写入和 Trace 记录。`ResearchTaskAgent` 只负责执行单个 task 的 source discovery，不接触 Evidence Store 或 artifacts。`SubagentExecutor` 只负责并发调度，不关心 research domain logic。
 - **Evidence Grounding**: research 后 evidence 的 grounding 逻辑不变：Writer 从 Evidence Store 读取 evidence，Verifier 基于 evidence 验证 claims。subagent 架构不改变 evidence 的质量或内容。
 - **Traceability**: subagent lifecycle 必须在 Trace 中完整记录。每个 subagent 的 start/finish 事件包含 subagent_id（`SA-{run_id}-{seq:03d}`）、task_id、status、latency。Subagent 内 source provider 的 tool_call/tool_result 事件包含 task_id 和 subagent_id 作为上下文。
@@ -174,12 +174,12 @@ Trace 必须完整记录 research phase 的 subagent 执行细节：Lead Agent �
 - **SC-004**: 每个 subagent 执行包含 ResearchTask 的 start/finish 被记录到 Trace，包含 subagent_id、task_id、status、latency。
 - **SC-005**: 当 1 个 subagent 失败、其他成功时，成功的 evidence 被写入 Evidence Store，失败信息在 Trace 中可追溯。
 - **SC-006**: `max_concurrent_research_tasks=1` 时，evidence 输出与当前串行 Researcher loop 完全一致。
-- **SC-007**: Evidence Store 中的 evidence ID 格式保持 `EVD-{run_id}-{seq:03d}`，ID 分配稳定可预测。
+- **SC-007**: Evidence Store 中的 evidence ID 格式保持 `EV-{run_id}-{seq:03d}`，ID 分配稳定可预测。
 - **SC-008**: 不引入新的外部 Python 依赖（stdlib only 用于并发）。
 
 ## Assumptions
 
-- **A-001**: `SourceDiscoveryProvider` 的 `search()` 和 `fetch()` 方法在并发调用时是线程安全的。FixtureSourceProvider 已验证线程安全（无共享可变状态），ExaSearchProvider 的 HTTP 调用天然线程安全。
+- **A-001**: `SourceDiscoveryProvider` 的 `search()` 和 `fetch()` 方法在并发调用时需保持功能正确。当前实现中 `LeadResearchAgent` 将同一个 provider 实例共享给所有 subagent；`FixtureSourceProvider` 和 `ExaSearchProvider` 内部有 mutable cache，在并发调用时依赖 provider 操作幂等性和 Python GIL 保护。当前测试中未观察到 data corruption，但严格线程安全性是 known limitation（见 review.md L-002）。
 - **A-002**: `ThreadPoolExecutor` 足以满足当前 research 阶段的并发需求。大多数 research tasks 的 latency 来自 I/O（网络请求或文件读取），线程模型适合 I/O-bound 并发。
 - **A-003**: 现有 fixture eval 的 5 个 seed cases 足以验证 subagent 架构的 regression 稳定性。
 - **A-004**: Current Harness 的 `_TraceRecorder` 内部类可以在 TraceWriter API 层面被复用，LeadResearchAgent 会新增自己的 Trace 事件记录逻辑。

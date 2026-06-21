@@ -7,6 +7,9 @@
 **Plan**: [plan.md](./plan.md)
 **Spec**: [spec.md](./spec.md)
 
+> **Status**: 此文件为历史计划文档，保留用于追溯实现路径。All P0/P1 tasks 已完成（283 passed, 5 deselected, 5/5 fixture eval）。
+> 实际实现可能与原始 plan 有细节差异，以 review.md Known Limitations 和 plan.md Design Caveats 为准。
+
 ## Task Format
 
 Every task uses this format:
@@ -83,7 +86,7 @@ Every task uses this format:
   - Tests: `python3 -m pytest tests/unit/test_lead_research_agent.py -v`
   - Related files: `tests/unit/test_lead_research_agent.py`
 
-- [ ] T010 [P1] [US2] 实现 `traceresearch/agents/lead_researcher.py` — `LeadResearchAgent` 类，`conduct_research(brief, provider, run_id, run_dir, trace_writer=None) -> list[Evidence]`，内部使用 `SubagentExecutor` 派发 tasks，收集 batches 后按 task 定义顺序分配 evidence ID（格式 `EVD-{run_id}-{seq:03d}`），dedup（调用 `dedupe_key()`），写入 `EvidenceStore`，记录 Trace（如 trace_writer 提供）
+- [x] T010 [P1] [US2] 实现 `traceresearch/agents/lead_researcher.py` — `LeadResearchAgent` 类，`conduct_research(brief, provider, run_id, run_dir, trace_writer=None) -> LeadResearchResult`，内部使用 `SubagentExecutor` 派发 tasks，收集 batches 后按 task 定义顺序分配 evidence ID（格式 `EV-{run_id}-{seq:03d}`），dedup（调用 `dedupe_key()`），写入 `EvidenceStore`，记录 Trace（如 trace_writer 提供）
   - DoD: T009 全部 tests pass；evidence 与当前 `Researcher.research()` 输出内容等效
   - Tests: `python3 -m pytest tests/unit/test_lead_research_agent.py -v`
   - Related files: `traceresearch/agents/lead_researcher.py`
@@ -99,14 +102,14 @@ Every task uses this format:
 
 > 实现 RESEARCH_LEAD 和 RESEARCH_SUBAGENT trace 事件。完成后可独立验证：运行一次 research 后检查 trace.jsonl 包含所有新事件。
 
-- [ ] T012 [P1] [US3] 先写 test: `tests/unit/test_subagent_trace.py` — 验证 LeadResearchAgent 产生 RESEARCH_LEAD START/FINISH 事件、每个 subagent 产生 RESEARCH_SUBAGENT START/FINISH 事件、subagent error 产生 ERROR 事件、tool_call/tool_result 包含 task_id 和 subagent_id
-  - DoD: test 文件包含 5+ 个 scenario，使用 TraceWriter(TemporaryDirectory) 检查 trace.jsonl 内容
-  - Tests: `python3 -m pytest tests/unit/test_subagent_trace.py -v`
-  - Related files: `tests/unit/test_subagent_trace.py`
+- [x] T012 [P1] [US3] Trace 测试已在 `tests/unit/test_lead_research_agent.py` 中实现（`test_trace_events_recorded`、`test_trace_contains_tool_events`、`test_trace_ids_are_unique`）— 验证 RESEARCH_LEAD START/FINISH、RESEARCH_SUBAGENT START/TOOL_CALL/TOOL_RESULT/FINISH、trace ID 唯一性
+  - DoD: trace.jsonl 可被 `TraceWriter.read_all()` 正常解析，trace_id 无重复
+  - Tests: `python3 -m pytest tests/unit/test_lead_research_agent.py -v`
+  - Related files: `tests/unit/test_lead_research_agent.py`
 
-- [ ] T013 [P1] [US3] 在 `LeadResearchAgent.conduct_research()` 中添加 Trace 记录逻辑 — RESEARCH_LEAD START（task_count, max_concurrent）、每个 subagent 的 RESEARCH_SUBAGENT START/FINISH、subagent error 时 RESEARCH_SUBAGENT ERROR、RESEARCH_LEAD TOOL_RESULT（total_evidence, failed_tasks）、RESEARCH_LEAD FINISH
-  - DoD: T012 全部 tests pass；trace.jsonl 可被 `TraceWriter.read_all()` 正常解析
-  - Tests: `python3 -m pytest tests/unit/test_subagent_trace.py -v`
+- [x] T013 [P1] [US3] 在 `LeadResearchAgent.conduct_research()` 中添加 Trace 记录逻辑 — RESEARCH_LEAD START（task_count, max_concurrent）、每个 subagent 的 RESEARCH_SUBAGENT START/TOOL_CALL/TOOL_RESULT/FINISH（失败时 FINISH status=FAILED + TOOL_RESULT error）、RESEARCH_LEAD TOOL_RESULT + FINISH
+  - DoD: trace.jsonl 可被 `TraceWriter.read_all()` 正常解析；tool events 在 Lead 单线程写入
+  - Tests: `python3 -m pytest tests/unit/test_lead_research_agent.py tests/integration/test_subagent_research_integration.py -v`
   - Related files: `traceresearch/agents/lead_researcher.py`
 
 ---
@@ -120,13 +123,13 @@ Every task uses this format:
   - Tests: `python3 -m pytest tests/unit/ -k "critic" -v`
   - Related files: `traceresearch/evidence/models.py`
 
-- [ ] T015 [P2] [US4] 先写 integration test: `tests/integration/test_subagent_partial_failure.py` — 使用 mock provider 让 1 个 task 抛 `SourceDiscoveryError`，验证其他 2 个 tasks 的 evidence 正常写入、run status 为 COMPLETED、Critic.missing_perspectives 包含失败 task 的 perspective、Trace 记录 error 事件
+- [x] T015 [P2] [US4] Partial failure integration test 已在 `tests/integration/test_subagent_research_integration.py` 中实现（`test_partial_failure_passes_failed_task_ids_to_critique`）— 使用 mock provider 让 1 个 task 失败、1 个 task 成功，验证 evidence 保留、failed_task_ids 正确、Trace 记录 FINISH status=FAILED + TOOL_RESULT error
   - DoD: test 覆盖 partial failure 的完整 flow
-  - Tests: `python3 -m pytest tests/integration/test_subagent_partial_failure.py -v`
-  - Related files: `tests/integration/test_subagent_partial_failure.py`
+  - Tests: `python3 -m pytest tests/integration/test_subagent_research_integration.py -v -k "partial_failure"`
+  - Related files: `tests/integration/test_subagent_research_integration.py`
 
-- [ ] T016 [P2] [US4] 在 `SubagentExecutor.execute()` 中实现 `task_timeout` 逻辑 — 使用 `Future.result(timeout)`，超时时标记 `SubagentStatus.TIMED_OUT`，保留已有的 partial results
-  - DoD: T005 中 timeout test case pass
+- [x] T016 [P2] [US4] 在 `SubagentExecutor.execute()` 中实现 `task_timeout` 逻辑 — 使用 `as_completed(timeout=...)` + `pool.shutdown(wait=False)`，超时时标记 `SubagentStatus.TIMED_OUT`（当前不保留 partial results；timeout 是 batch-level 等待窗口）
+  - DoD: T005 中 timeout test case pass（含 elapsed time 断言）
   - Tests: `python3 -m pytest tests/unit/test_subagent_executor.py -v`
   - Related files: `traceresearch/agents/subagent_executor.py`
 
@@ -141,7 +144,7 @@ Every task uses this format:
   - Tests: `python3 -m pytest tests/integration/test_subagent_research_integration.py -v`
   - Related files: `tests/integration/test_subagent_research_integration.py`
 
-- [ ] T018 [P0] 修改 `traceresearch/harness/orchestrator.py` — 将 research loop（lines 166-228）替换为 `LeadResearchAgent.conduct_research()` 调用：构造 `LeadResearchAgent`（如未注入），传入 `SubagentExecutor`（默认 max_workers 从 env var `TRACERESEARCH_MAX_CONCURRENT_RESEARCH_TASKS` 读取，默认 3），调用 `conduct_research()` 获取 `stored_evidence`
+- [x] T018 [P0] 修改 `traceresearch/harness/orchestrator.py` — 将 research loop 替换为 `LeadResearchAgent.conduct_research()` 调用，解构 `LeadResearchResult` 获取 `stored_evidence` 和 `failed_task_ids`，将 `failed_task_ids` 传递给 `Critic.review()`
   - DoD: T017 所有 integration tests pass；orchestrator 对 ResearchHarness 的 Planner/Writer/Verifier/Critic 逻辑 zero 改动
   - Tests: `python3 -m pytest tests/integration/test_subagent_research_integration.py -v`
   - Related files: `traceresearch/harness/orchestrator.py`

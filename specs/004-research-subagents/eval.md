@@ -66,7 +66,7 @@ for run_dir in runs.iterdir():
 ## Latest Result
 
 **Date**: 2026-06-21
-**Test Suite**: 279 passed, 5 deselected (llm_smoke), 0 failed
+**Test Suite**: 283 passed, 5 deselected (llm_smoke), 0 failed
 **Eval Tests**: 4/4 passed — fixture eval runner executes all 5 seed cases successfully
 **Integration Tests**: 37/37 passed — including subagent-specific integration tests
 
@@ -78,9 +78,10 @@ for run_dir in runs.iterdir():
 
 Integration tests confirm:
 - `trace.jsonl` contains RESEARCH_LEAD events (START, TOOL_RESULT, FINISH)
-- `trace.jsonl` contains RESEARCH_SUBAGENT events (START, FINISH) with task_id, subagent_id
-- Provider tool results tracked with proper tool_name ("fixture.search")
-- Error events recorded with provider error codes for web provider failures
+- `trace.jsonl` contains RESEARCH_SUBAGENT events (START, TOOL_CALL, TOOL_RESULT, FINISH) with task_id, subagent_id
+- Provider tool calls/results tracked with proper tool_name ("fixture.search")
+- Provider failures recorded as RESEARCH_SUBAGENT FINISH status=FAILED + TOOL_RESULT error with provider error codes
+- Trace IDs are unique under concurrent execution (50-thread stress test)
 
 ### Evidence Store Validation
 
@@ -92,7 +93,7 @@ Integration tests confirm:
 
 - SubagentExecutor correctly executes tasks with bounded concurrency (default 3)
 - Failure isolation: single failing task doesn't block successful tasks
-- Timeout mechanism works for hung tasks
+- Timeout mechanism returns promptly for hung tasks (elapsed time <2s for 5s sleep with 0.1s timeout; batch-level timeout, not per-task wall-clock)
 - All-failure detection returns FAILED run status
 
 ## Bad Cases

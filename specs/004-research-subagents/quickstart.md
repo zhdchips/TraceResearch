@@ -42,7 +42,7 @@ traceresearch eval --cases-dir eval/cases --source-provider fixture --results-di
 `trace.jsonl` 中新增两种 agent role：
 
 - `ResearchLead` — Lead Agent 的 orchestration 事件（START, TOOL_CALL, TOOL_RESULT, FINISH）
-- `ResearchSubagent` — 每个 research task 的 subagent 生命周期事件（START, TOOL_CALL, TOOL_RESULT, FINISH, ERROR）
+- `ResearchSubagent` — 每个 research task 的 subagent 生命周期事件（START, TOOL_CALL, TOOL_RESULT, FINISH）。常规 provider 失败记录为 FINISH status=FAILED + TOOL_RESULT error；ERROR 事件仅在 agent_factory 自身抛未捕获异常时出现。
 
 ### Partial Failure
 
@@ -58,5 +58,5 @@ python3 -m pytest -m "not llm_smoke"
 traceresearch eval --cases-dir eval/cases --source-provider fixture --results-dir eval/results
 
 # Subagent-specific tests
-python3 -m pytest tests/unit/test_subagent_executor.py tests/unit/test_research_task_agent.py tests/unit/test_lead_research_agent.py -v
+python3 -m pytest tests/unit/test_subagent_executor.py tests/unit/test_research_task_agent.py tests/unit/test_lead_research_agent.py tests/unit/test_subagent_models.py -v
 ```
