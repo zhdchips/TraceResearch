@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,6 +24,27 @@ from traceresearch.trace.models import (
     TraceEvent,
     TraceStatus,
 )
+from traceresearch.trace.writer import TraceWriter
+
+
+def _resolve_task_timeout(default: float | None = None) -> float | None:
+    env_value = os.environ.get("TRACERESEARCH_RESEARCH_TASK_TIMEOUT_SECONDS", "")
+    if env_value:
+        try:
+            parsed = float(env_value)
+            if parsed > 0:
+                return parsed
+        except ValueError:
+            pass
+    return default
+
+
+@dataclass
+class LeadResearchResult:
+    """Result from conduct_research() — evidence + failure metadata."""
+
+    evidence: list[Evidence] = field(default_factory=list)
+    failed_task_ids: list[str] = field(default_factory=list)
 
 
 class LeadResearchAgent:
@@ -33,16 +55,20 @@ class LeadResearchAgent:
     - Deduplicate evidence across subagent results
     - Assign stable evidence IDs in task definition order
     - Write evidence to EvidenceStore
-    - Record lifecycle trace events
+    - Record lifecycle trace events (thread-safe via TraceWriter)
     """
 
     def __init__(
         self,
         *,
         max_concurrent: int | None = None,
+        task_timeout: float | None = None,
     ) -> None:
         self.max_concurrent = (
             max_concurrent if max_concurrent is not None else _resolve_max_workers()
+        )
+        self.task_timeout = (
+            task_timeout if task_timeout is not None else _resolve_task_timeout()
         )
         self._task_agent = ResearchTaskAgent()
 
@@ -53,14 +79,14 @@ class LeadResearchAgent:
         provider: SourceDiscoveryProvider,
         run_id: str,
         run_dir: str | Path,
-        trace_writer: object | None = None,
+        trace_writer: TraceWriter | None = None,
         provider_tool_name: str | None = None,
-    ) -> list[Evidence]:
+    ) -> LeadResearchResult:
         run_dir = Path(run_dir)
         tasks = brief.research_tasks
 
         if not tasks:
-            return []
+            return LeadResearchResult()
 
         # Initialize evidence store
         evidence_path = run_dir / "evidence.jsonl"
@@ -74,21 +100,20 @@ class LeadResearchAgent:
             AgentRole.RESEARCH_LEAD,
             EventType.START,
             f"dispatching {len(tasks)} research tasks",
-            f"max_concurrent={self.max_concurrent}",
+            f"max_concurrent={self.max_concurrent} task_timeout={self.task_timeout}",
             status=TraceStatus.SUCCESS,
         )
 
-        # Build agent factory that creates CompressedResearchContext per task
+        # Build agent factory — runs in worker thread
         def agent_factory(ctx: CompressedResearchContext) -> CandidateEvidenceBatch:
-            # Enrich context with provider name before execution
             enriched_ctx = CompressedResearchContext(
                 run_id=ctx.run_id,
                 brief_summary=ctx.brief_summary,
                 task=ctx.task,
                 provider_name=provider_name,
             )
-            # Trace: subagent start
             subagent_id = f"SA-{run_id}-{ctx.task.research_task_id}"
+            # Trace: subagent start (thread-safe via TraceWriter)
             self._trace(
                 trace_writer,
                 run_id,
@@ -105,7 +130,6 @@ class LeadResearchAgent:
             try:
                 batch = self._task_agent.execute(context=enriched_ctx, provider=provider)
 
-                # Trace: subagent finish
                 finish_status = TraceStatus.SUCCESS
                 if batch.status == SubagentStatus.FAILED:
                     finish_status = TraceStatus.FAILED
@@ -142,32 +166,37 @@ class LeadResearchAgent:
                 )
                 raise
 
-        # Build tasks with contexts
-        task_contexts = [
-            CompressedResearchContext(
-                run_id=run_id,
-                brief_summary=f"Research: {brief.objective[:200]}",
-                task=task,
-                provider_name=provider_name,
-                created_at=datetime.now(timezone.utc),
-            )
-            for task in tasks
-        ]
-
-        # Create a factory that maps from CompressedResearchContext
         executor = SubagentExecutor(
             max_workers=self.max_concurrent,
-            task_timeout=None,
+            task_timeout=self.task_timeout,
         )
 
-        # We need to map tasks to the executor's expected factory signature.
-        # SubagentExecutor calls factory(context), so we wrap agent_factory
-        # to receive the context and return the batch.
+        start_time = datetime.now(timezone.utc)
         batches = executor.execute(tasks, agent_factory)
+        elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
+
+        # --- Write tool events single-threaded (after all subagents complete) ---
+        for batch in batches:
+            for te in batch.tool_events:
+                ev_status = TraceStatus.SUCCESS if te.status == "success" else TraceStatus.FAILED
+                ev_type = EventType.TOOL_CALL if te.event_type == "tool_call" else EventType.TOOL_RESULT
+                self._trace(
+                    trace_writer,
+                    run_id,
+                    AgentRole.RESEARCH_SUBAGENT,
+                    ev_type,
+                    te.input_summary,
+                    te.output_summary,
+                    task_id=batch.task_id,
+                    subagent_id=batch.subagent_id,
+                    tool_name=te.tool_name,
+                    status=ev_status,
+                    error=te.error,
+                )
 
         # Trace: lead tool result
         total_candidates = sum(len(b.candidates) for b in batches)
-        failed_tasks = [
+        failed_task_ids = [
             b.task_id for b in batches
             if b.status in (SubagentStatus.FAILED, SubagentStatus.TIMED_OUT)
         ]
@@ -176,12 +205,12 @@ class LeadResearchAgent:
             run_id,
             AgentRole.RESEARCH_LEAD,
             EventType.TOOL_RESULT,
-            f"executor returned {len(batches)} batches",
-            f"total_candidates={total_candidates} failed_tasks={len(failed_tasks)}",
+            f"executor returned {len(batches)} batches in {elapsed:.1f}s",
+            f"total_candidates={total_candidates} failed_tasks={len(failed_task_ids)}",
             status=TraceStatus.SUCCESS,
         )
 
-        # If all failed, return empty
+        # If all failed, return empty with failed_task_ids
         if all(b.status in (SubagentStatus.FAILED, SubagentStatus.TIMED_OUT) for b in batches):
             first_error = next(
                 (b.error for b in batches if b.error is not None), None
@@ -192,14 +221,14 @@ class LeadResearchAgent:
                 AgentRole.RESEARCH_LEAD,
                 EventType.FINISH,
                 "all tasks failed",
-                f"failed_tasks={failed_tasks}",
+                f"failed_task_ids={failed_task_ids}",
                 status=TraceStatus.FAILED,
                 error=first_error or ErrorInfo(
                     type="AllTasksFailed",
                     message="All research tasks failed or timed out",
                 ),
             )
-            return []
+            return LeadResearchResult(failed_task_ids=failed_task_ids)
 
         # Dedup and assign evidence IDs in task definition order
         stored_evidence: list[Evidence] = []
@@ -221,7 +250,6 @@ class LeadResearchAgent:
                 if key in seen_keys:
                     continue
                 seen_keys.add(key)
-                # Assign stable evidence ID
                 evidence = candidate.model_copy(
                     update={
                         "evidence_id": f"EV-{run_id}-{sequence:03d}",
@@ -241,16 +269,22 @@ class LeadResearchAgent:
             run_id,
             AgentRole.RESEARCH_LEAD,
             EventType.FINISH,
-            f"research phase complete",
-            f"stored={len(stored_evidence)} evidence dedup_skipped={total_candidates - len(stored_evidence)} failed_tasks={failed_tasks}",
+            "research phase complete",
+            f"stored={len(stored_evidence)} evidence "
+            f"dedup_skipped={total_candidates - len(stored_evidence)} "
+            f"failed_tasks={failed_task_ids} "
+            f"elapsed={elapsed:.1f}s",
             status=TraceStatus.SUCCESS,
         )
 
-        return stored_evidence
+        return LeadResearchResult(
+            evidence=stored_evidence,
+            failed_task_ids=failed_task_ids,
+        )
 
     @staticmethod
     def _trace(
-        writer: object | None,
+        writer: TraceWriter | None,
         run_id: str,
         agent_role: AgentRole,
         event_type: EventType,
@@ -265,11 +299,10 @@ class LeadResearchAgent:
     ) -> None:
         if writer is None:
             return
-        # Use a simple internal sequence for trace IDs
-        seq = getattr(writer, "_lead_seq", 0) + 1
-        object.__setattr__(writer, "_lead_seq", seq)
+        # Thread-safe via TraceWriter's internal lock and sequence
+        trace_id = writer.next_trace_id(run_id)
         event = TraceEvent(
-            trace_id=f"TR-{run_id}-lead-{seq:03d}",
+            trace_id=trace_id,
             run_id=run_id,
             task_id=task_id,
             subagent_id=subagent_id,

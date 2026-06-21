@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from traceresearch.agents.lead_researcher import LeadResearchAgent
+from traceresearch.agents.lead_researcher import LeadResearchAgent, LeadResearchResult
 from traceresearch.agents.subagent_models import SubagentStatus
 from traceresearch.evidence.models import (
     Evidence,
@@ -23,8 +23,6 @@ from traceresearch.source_discovery.fixture_provider import FixtureSourceProvide
 from traceresearch.trace.models import AgentRole, EventType
 from traceresearch.trace.writer import TraceWriter
 
-# Fixture case 001-framework-comparison has perspectives:
-#   orchestration model, multi-agent collaboration, production readiness, risks and limitations
 FIXTURE_CASE = "001-framework-comparison"
 FIXTURE_PERSPECTIVES = [
     "orchestration model",
@@ -126,20 +124,21 @@ class TestLeadResearchAgent:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             agent = LeadResearchAgent(max_concurrent=1)
-            evidence = agent.conduct_research(
+            result = agent.conduct_research(
                 brief=brief,
                 provider=provider,
                 run_id="run-001",
                 run_dir=Path(tmpdir),
             )
-            assert len(evidence) > 0
-            for e in evidence:
+            assert isinstance(result, LeadResearchResult)
+            assert len(result.evidence) > 0
+            for e in result.evidence:
                 assert e.evidence_id.startswith("EV-run-001-")
                 assert e.run_id == "run-001"
                 assert e.status == EvidenceStatus.CANDIDATE
+            assert result.failed_task_ids == []
 
     def test_evidence_id_ordering_sequential(self) -> None:
-        """Evidence IDs are assigned sequentially."""
         provider = FixtureSourceProvider(case_id=FIXTURE_CASE)
         brief = _make_brief(
             tasks=[
@@ -162,42 +161,33 @@ class TestLeadResearchAgent:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             agent = LeadResearchAgent(max_concurrent=1)
-            evidence = agent.conduct_research(
+            result = agent.conduct_research(
                 brief=brief,
                 provider=provider,
                 run_id="run-002",
                 run_dir=Path(tmpdir),
             )
-
+            evidence = result.evidence
             assert len(evidence) > 0
             ids = [e.evidence_id for e in evidence]
-            # Verify IDs are sequential and follow expected format
             for i, id_str in enumerate(ids, start=1):
-                assert id_str.startswith(f"EV-run-002-")
+                assert id_str.startswith("EV-run-002-")
                 parts = id_str.split("-")
                 assert len(parts) >= 4
-                # The sequence number part should be sequential
                 assert int(parts[-1]) == i, f"Expected seq {i}, got {parts[-1]}"
 
     def test_dedup_two_tasks_same_url(self) -> None:
-        """Two tasks returning evidence with same URL → only one stored."""
         evidence_a = _make_evidence(
-            evidence_id="tmp-1",
-            run_id="run-003",
-            task_id="T-A",
-            url="https://example.com/report",
-            title="Same Report",
+            evidence_id="tmp-1", run_id="run-003", task_id="T-A",
+            url="https://example.com/report", title="Same Report",
         )
         evidence_b = _make_evidence(
-            evidence_id="tmp-2",
-            run_id="run-003",
-            task_id="T-B",
-            url="https://example.com/report",
-            title="Same Report",
+            evidence_id="tmp-2", run_id="run-003", task_id="T-B",
+            url="https://example.com/report", title="Same Report",
         )
         k1 = dedupe_key(evidence_a)
         k2 = dedupe_key(evidence_b)
-        assert k1 == k2, "Same URL should produce same dedupe key"
+        assert k1 == k2
 
         seen_keys: set[tuple[str, str]] = set()
         accepted: list[Evidence] = []
@@ -209,87 +199,68 @@ class TestLeadResearchAgent:
                     update={"evidence_id": f"EV-run-003-{seq:03d}"}
                 )
                 accepted.append(candidate)
-
         assert len(accepted) == 1
         assert accepted[0].evidence_id == "EV-run-003-001"
 
-    def test_conduct_research_returns_evidence(self) -> None:
-        """Simple task with matching perspective returns evidence."""
+    def test_conduct_research_returns_lead_research_result(self) -> None:
         provider = FixtureSourceProvider(case_id=FIXTURE_CASE)
         brief = _make_brief(
             tasks=[
                 ResearchTask(
-                    research_task_id="T-001",
-                    run_id="run-004",
+                    research_task_id="T-001", run_id="run-004",
                     perspective="orchestration model",
                     objective="Task A",
                     query="How do frameworks handle orchestration?",
                 ),
             ]
         )
-
         with tempfile.TemporaryDirectory() as tmpdir:
             agent = LeadResearchAgent(max_concurrent=1)
-            evidence = agent.conduct_research(
-                brief=brief,
-                provider=provider,
-                run_id="run-004",
-                run_dir=Path(tmpdir),
+            result = agent.conduct_research(
+                brief=brief, provider=provider,
+                run_id="run-004", run_dir=Path(tmpdir),
             )
-            assert len(evidence) > 0
+            assert isinstance(result, LeadResearchResult)
+            assert len(result.evidence) > 0
 
-    def test_empty_research_tasks_returns_empty(self) -> None:
-        """If brief has clarifications but no tasks, returns empty."""
+    def test_empty_research_tasks_returns_empty_result(self) -> None:
         provider = FixtureSourceProvider(case_id=FIXTURE_CASE)
         brief = ResearchBrief(
-            run_id="run-005",
-            objective="Test research",
-            scope_boundaries=["test"],
-            assumptions=[],
+            run_id="run-005", objective="Test research",
+            scope_boundaries=["test"], assumptions=[],
             open_clarifications=["Needs more info"],
-            perspectives=[],
-            success_criteria=[],
-            research_tasks=[],
+            perspectives=[], success_criteria=[], research_tasks=[],
         )
-
         with tempfile.TemporaryDirectory() as tmpdir:
             agent = LeadResearchAgent(max_concurrent=1)
-            evidence = agent.conduct_research(
-                brief=brief,
-                provider=provider,
-                run_id="run-005",
-                run_dir=Path(tmpdir),
+            result = agent.conduct_research(
+                brief=brief, provider=provider,
+                run_id="run-005", run_dir=Path(tmpdir),
             )
-            assert evidence == []
+            assert result.evidence == []
+            assert result.failed_task_ids == []
 
     def test_trace_events_recorded(self) -> None:
-        """Trace contains RESEARCH_LEAD START/FINISH events."""
         provider = FixtureSourceProvider(case_id=FIXTURE_CASE)
         brief = _make_brief(
             tasks=[
                 ResearchTask(
-                    research_task_id="T-001",
-                    run_id="run-006",
-                    perspective="orchestration model",
-                    objective="Task A",
-                    query="How do frameworks handle orchestration?",
-                    source_limit=1,
+                    research_task_id="T-001", run_id="run-006",
+                    perspective="orchestration model", objective="Task A",
+                    query="How do frameworks handle orchestration?", source_limit=1,
                 ),
             ]
         )
-
         with tempfile.TemporaryDirectory() as tmpdir:
             trace_path = Path(tmpdir) / "trace.jsonl"
             trace_writer = TraceWriter(trace_path)
             agent = LeadResearchAgent(max_concurrent=1)
-            evidence = agent.conduct_research(
-                brief=brief,
-                provider=provider,
-                run_id="run-006",
-                run_dir=Path(tmpdir),
+            result = agent.conduct_research(
+                brief=brief, provider=provider,
+                run_id="run-006", run_dir=Path(tmpdir),
                 trace_writer=trace_writer,
             )
-            assert len(evidence) > 0
+            assert len(result.evidence) > 0
 
             events = trace_writer.read_all()
             lead_events = [
@@ -298,14 +269,72 @@ class TestLeadResearchAgent:
             ]
             assert len(lead_events) > 0
 
-            lead_starts = [
-                e for e in lead_events
-                if e.agent_role == AgentRole.RESEARCH_LEAD and e.event_type == EventType.START
-            ]
+            lead_starts = [e for e in lead_events if e.agent_role == AgentRole.RESEARCH_LEAD and e.event_type == EventType.START]
             assert len(lead_starts) == 1
-
-            lead_finishes = [
-                e for e in lead_events
-                if e.agent_role == AgentRole.RESEARCH_LEAD and e.event_type == EventType.FINISH
-            ]
+            lead_finishes = [e for e in lead_events if e.agent_role == AgentRole.RESEARCH_LEAD and e.event_type == EventType.FINISH]
             assert len(lead_finishes) == 1
+
+    def test_trace_contains_tool_events(self) -> None:
+        """Trace must contain RESEARCH_SUBAGENT + TOOL_CALL + TOOL_RESULT events."""
+        provider = FixtureSourceProvider(case_id=FIXTURE_CASE)
+        brief = _make_brief(
+            tasks=[
+                ResearchTask(
+                    research_task_id="T-001", run_id="run-007",
+                    perspective="orchestration model", objective="Task A",
+                    query="How do frameworks handle orchestration?", source_limit=1,
+                ),
+            ]
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trace_path = Path(tmpdir) / "trace.jsonl"
+            trace_writer = TraceWriter(trace_path)
+            agent = LeadResearchAgent(max_concurrent=1)
+            agent.conduct_research(
+                brief=brief, provider=provider,
+                run_id="run-007", run_dir=Path(tmpdir),
+                trace_writer=trace_writer,
+            )
+
+            events = trace_writer.read_all()
+            subagent_tool_calls = [
+                e for e in events
+                if e.agent_role == AgentRole.RESEARCH_SUBAGENT
+                and e.event_type == EventType.TOOL_CALL
+            ]
+            subagent_tool_results = [
+                e for e in events
+                if e.agent_role == AgentRole.RESEARCH_SUBAGENT
+                and e.event_type == EventType.TOOL_RESULT
+            ]
+            assert len(subagent_tool_calls) > 0, "Expected TOOL_CALL events in trace"
+            assert len(subagent_tool_results) > 0, "Expected TOOL_RESULT events in trace"
+            # tool_name should be fixture.search
+            assert any(e.tool_name == "fixture.search" for e in subagent_tool_calls)
+
+    def test_trace_ids_are_unique(self) -> None:
+        """Trace events written from concurrent threads must have unique trace_ids."""
+        provider = FixtureSourceProvider(case_id=FIXTURE_CASE)
+        brief = _make_brief(
+            tasks=[
+                ResearchTask(
+                    research_task_id="T-001", run_id="run-008",
+                    perspective=p, objective=f"Task {p}",
+                    query=f"Research {p}", source_limit=1,
+                )
+                for p in FIXTURE_PERSPECTIVES[:3]
+            ]
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trace_path = Path(tmpdir) / "trace.jsonl"
+            trace_writer = TraceWriter(trace_path)
+            agent = LeadResearchAgent(max_concurrent=3)
+            agent.conduct_research(
+                brief=brief, provider=provider,
+                run_id="run-008", run_dir=Path(tmpdir),
+                trace_writer=trace_writer,
+            )
+
+            events = trace_writer.read_all()
+            trace_ids = [e.trace_id for e in events]
+            assert len(trace_ids) == len(set(trace_ids)), "Trace IDs must be unique"

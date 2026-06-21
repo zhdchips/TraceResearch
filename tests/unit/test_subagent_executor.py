@@ -107,20 +107,25 @@ class TestSubagentExecutor:
         # With max_workers=1, tasks should complete in submission order
         assert completion_order == ["T-001", "T-002", "T-003"]
 
-    def test_timeout_marks_task_as_timed_out(self) -> None:
+    def test_timeout_marks_task_as_timed_out_and_does_not_block(self) -> None:
         tasks = [_make_task("T-001")]
-        executor = SubagentExecutor(max_workers=1, task_timeout=0.01)
+        executor = SubagentExecutor(max_workers=1, task_timeout=0.1)
 
         def slow_factory(context: CompressedResearchContext):
-            time.sleep(0.5)  # Much longer than timeout
+            time.sleep(5.0)  # Far longer than timeout
             return CandidateEvidenceBatch(
                 task_id=context.task.research_task_id,
                 subagent_id="SA-001",
             )
 
+        start = time.monotonic()
         results = executor.execute([tasks[0]], slow_factory)
+        elapsed = time.monotonic() - start
+
         assert len(results) == 1
         assert results[0].status == SubagentStatus.TIMED_OUT
+        # Executor must return quickly (within ~2x timeout + overhead)
+        assert elapsed < 2.0, f"Executor blocked for {elapsed:.1f}s, expected <2s"
 
     def test_empty_task_list_returns_empty(self) -> None:
         executor = SubagentExecutor(max_workers=2)

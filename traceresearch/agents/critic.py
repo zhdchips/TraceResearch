@@ -19,6 +19,7 @@ class Critic:
         brief: ResearchBrief,
         evidence: list[Evidence],
         verification: VerificationResult,
+        failed_task_ids: list[str] | None = None,
     ) -> CritiqueResult:
         covered_perspectives = {item.perspective for item in evidence}
         missing_perspectives = [
@@ -26,6 +27,14 @@ class Critic:
             for perspective in brief.perspectives
             if perspective not in covered_perspectives
         ]
+        # Add failed task perspectives to missing_perspectives
+        if failed_task_ids:
+            for task in brief.research_tasks:
+                if task.research_task_id in failed_task_ids:
+                    perspective_label = f"{task.perspective} (research task failed)"
+                    if perspective_label not in missing_perspectives:
+                        missing_perspectives.append(perspective_label)
+
         weak_sources = [
             item.evidence_id
             for item in evidence
@@ -34,6 +43,12 @@ class Critic:
         limitations_to_add = []
         if not evidence:
             limitations_to_add.append("No evidence was found for the requested research question.")
+        if failed_task_ids:
+            for task_id in failed_task_ids:
+                limitations_to_add.append(
+                    f"Research task {task_id} failed or timed out — "
+                    "associated perspective data may be incomplete."
+                )
 
         has_blocker = bool(missing_perspectives or verification.unsupported_claim_count)
         return CritiqueResult(
@@ -45,4 +60,5 @@ class Critic:
             limitations_to_add=limitations_to_add,
             decision=CritiqueDecision.REVISE if has_blocker else CritiqueDecision.PASS,
             next_phase=NextPhase.RESEARCH if has_blocker else NextPhase.COMPLETE,
+            failed_task_ids=failed_task_ids if failed_task_ids else [],
         )

@@ -80,12 +80,26 @@ Review the implementation of the "Research Subagents" feature, which replaces th
 | Phase 1 (Foundation) | T001-T004 | ✅ All complete |
 | Phase 2 (US1 - Parallel) | T005-T008 | ✅ All complete |
 | Phase 3 (US2 - Lead Agent) | T009-T011 | ✅ All complete |
-| Phase 4 (US3 - Trace) | T012-T013 | ✅ Partially complete (trace implemented, test in T009) |
-| Phase 5 (US4 - Partial Failure) | T014-T016 | ✅ Partially complete (failed_task_ids added, timeout in T006, integration test in T017) |
+| Phase 4 (US3 - Trace) | T012-T013 | ✅ Complete — thread-safe TraceWriter, TOOL_CALL/TOOL_RESULT events |
+| Phase 5 (US4 - Partial Failure) | T014-T016 | ✅ Complete — failed_task_ids flow through to Critic + critique.json |
 | Phase 6 (US5 - Harness) | T017-T021 | ✅ All complete |
-| Phase 7 (Polish) | T022-T024 | ⚠️ T022 (exports) and T024 (dead code cleanup) remaining — non-blocking |
+| Phase 7 (Polish) | T022-T024 | ✅ T024 dead code removed; T022 non-blocking |
 
-### Task completion rate: ~22/24 (92%)
+### Task completion rate: ~23/24 (96%)
+
+### Post-Review Fixes (2026-06-21)
+
+Four issues identified in review have been resolved:
+
+1. **Timeout** — `SubagentExecutor` now uses `pool.shutdown(wait=False)` so slow tasks don't block the caller. Configurable via `TRACERESEARCH_RESEARCH_TASK_TIMEOUT_SECONDS` env var. Timeout test asserts elapsed wall-clock time <2s for a 5s sleep with 0.1s timeout.
+
+2. **Partial failure → Critic** — `conduct_research()` returns `LeadResearchResult` (evidence + failed_task_ids). Orchestrator passes `failed_task_ids` to `Critic.review()`. Critic adds failed task perspectives to `missing_perspectives` and task failure notes to `limitations_to_add`. `CritiqueResult.failed_task_ids` is populated. Integration test verifies: mock 1 fail + 1 succeed → evidence present, failed_task_ids correct.
+
+3. **Trace thread safety** — `TraceWriter` now has `threading.Lock` and `next_trace_id()` method for monotonic unique IDs. All concurrent append + sequence operations are lock-protected. Integration test: 50 threads write concurrently → all trace_ids unique, all lines parseable.
+
+4. **Provider tool observability** — `ResearchTaskAgent` records `ToolEvent` (TOOL_CALL / TOOL_RESULT) around provider.search(). LeadResearchAgent writes tool events to trace single-threaded after collecting batches. Integration test verifies TOOL_CALL + TOOL_RESULT events with tool_name="fixture.search".
+
+**Extra cleanup**: Removed unused `task_contexts` construction in `LeadResearchAgent`. Compressed brief context now correctly flows through `SubagentExecutor._run_agent()` → `agent_factory()` → `ResearchTaskAgent.execute()`.
 
 Remaining tasks are P2 polish items, not blocking for feature completion.
 
@@ -122,9 +136,12 @@ Remaining tasks are P2 polish items, not blocking for feature completion.
 ### Minor Issues
 
 1. **F-001** (Polish): `traceresearch/agents/__init__.py` doesn't export new symbols (T022). Users must import from specific modules. Impact: low — internal modules are functional.
-2. **F-002** (Polish): orchestrator still imports `Researcher` class which is no longer used by default (T024). Impact: low — kept for backward compatibility and tests.
-3. **F-003** (Polish): Test isolation issue (occasional flaky test in full suite). Likely caused by ThreadPoolExecutor thread lifecycle during pytest teardown. Impact: low — passes consistently in isolation and integration suite.
-4. **F-004** (Known limitation): Per-task timeout uses `as_completed(timeout=...)` which applies to all pending futures. Individual task timeouts not yet supported. Impact: low — default is no timeout (None).
+2. **F-002** (Polish): orchestrator still imports `Researcher` class which is no longer used by default. Impact: low — kept for backward compatibility and tests.
+3. **F-003** (Polish): Test isolation issue (occasional flaky test `test_fixture_run_report_artifacts_follow_contract` in full suite). Passes consistently in isolation. Impact: low — pre-existing, not caused by 004 changes.
+4. **F-004**: ~~Per-task timeout~~ — **RESOLVED**. `pool.shutdown(wait=False)` prevents blocking. Timeout test verifies elapsed time.
+5. **F-005**: ~~Partial failure not reaching Critic~~ — **RESOLVED**. `LeadResearchResult.failed_task_ids` flows to `CritiqueResult.failed_task_ids`.
+6. **F-006**: ~~Trace concurrent write race~~ — **RESOLVED**. `TraceWriter` now thread-safe with lock + monotonic sequence.
+7. **F-007**: ~~Missing TOOL_CALL/TOOL_RESULT~~ — **RESOLVED**. Tool events recorded by ResearchTaskAgent, written single-threaded by LeadResearchAgent.
 
 ## Bad Cases
 

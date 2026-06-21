@@ -175,7 +175,7 @@ class ResearchHarness:
             "research tasks",
             "source discovery via subagent executor",
         )
-        stored_evidence: list[Evidence] = self.lead_researcher.conduct_research(
+        research_result = self.lead_researcher.conduct_research(
             brief=brief,
             provider=provider,
             run_id=run_id,
@@ -183,6 +183,8 @@ class ResearchHarness:
             trace_writer=trace.writer,
             provider_tool_name=provider_tool_name,
         )
+        stored_evidence: list[Evidence] = research_result.evidence
+        failed_task_ids: list[str] = research_result.failed_task_ids
         trace.record(
             AgentRole.RESEARCHER,
             EventType.FINISH,
@@ -287,6 +289,7 @@ class ResearchHarness:
             brief=brief,
             evidence=verified_evidence,
             verification=verification,
+            failed_task_ids=failed_task_ids,
         )
         _write_json(artifacts.critique, critique.model_dump(mode="json"))
         trace.record(

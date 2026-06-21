@@ -5,6 +5,7 @@ from __future__ import annotations
 import concurrent.futures
 import os
 from collections.abc import Callable
+from datetime import datetime, timezone
 
 from traceresearch.agents.subagent_models import (
     CandidateEvidenceBatch,
@@ -35,6 +36,9 @@ class SubagentExecutor:
     Uses ThreadPoolExecutor for I/O-bound parallelism. Each task is dispatched
     to a separate thread. Failures are isolated — a single failed subagent
     does not affect other tasks.
+
+    When task_timeout is set, slow tasks are marked TIMED_OUT and the executor
+    returns without waiting for them (using pool.shutdown(wait=False)).
     """
 
     def __init__(
@@ -58,9 +62,8 @@ class SubagentExecutor:
         futures_to_tasks: dict[concurrent.futures.Future[CandidateEvidenceBatch], ResearchTask] = {}
         completed: set[concurrent.futures.Future[CandidateEvidenceBatch]] = set()
 
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=self.max_workers,
-        ) as pool:
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers)
+        try:
             for task in tasks:
                 future = pool.submit(
                     _run_agent,
@@ -69,7 +72,7 @@ class SubagentExecutor:
                 )
                 futures_to_tasks[future] = task
 
-            # Use as_completed with optional timeout to detect hangs.
+            # Wait for results with optional timeout.
             try:
                 for future in concurrent.futures.as_completed(
                     futures_to_tasks,
@@ -93,22 +96,29 @@ class SubagentExecutor:
                             )
                         )
             except concurrent.futures.TimeoutError:
-                pass  # as_completed timeout reached
+                pass  # as_completed timeout — remaining futures didn't finish in time
+        finally:
+            # Shutdown without waiting: slow threads will finish on their own.
+            # This prevents the caller from being blocked by hung tasks.
+            pool.shutdown(wait=False)
 
-            # Mark any futures that didn't complete as timed out.
-            for future, task in futures_to_tasks.items():
-                if future not in completed:
-                    results.append(
-                        CandidateEvidenceBatch(
-                            task_id=task.research_task_id,
-                            subagent_id=f"SA-{task.run_id}-timeout",
-                            status=SubagentStatus.TIMED_OUT,
-                            error=ErrorInfo(
-                                type="TimeoutError",
-                                message=f"Task {task.research_task_id} exceeded timeout",
+        # Mark any futures that didn't complete as timed out.
+        for future, task in futures_to_tasks.items():
+            if future not in completed:
+                results.append(
+                    CandidateEvidenceBatch(
+                        task_id=task.research_task_id,
+                        subagent_id=f"SA-{task.run_id}-timeout",
+                        status=SubagentStatus.TIMED_OUT,
+                        error=ErrorInfo(
+                            type="TimeoutError",
+                            message=(
+                                f"Task {task.research_task_id} exceeded "
+                                f"timeout of {self.task_timeout}s"
                             ),
-                        )
+                        ),
                     )
+                )
 
         return results
 
@@ -123,6 +133,6 @@ def _run_agent(
         run_id=task.run_id,
         brief_summary=f"Research task: {task.objective}",
         task=task,
-        provider_name="",  # Will be set by the caller's factory
+        provider_name="",  # Will be enriched by the caller's factory
     )
     return agent_factory(context)

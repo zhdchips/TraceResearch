@@ -35,6 +35,22 @@ class CompressedResearchContext:
 
 
 @dataclass
+class ToolEvent:
+    """Lightweight record of a provider tool call within a subagent.
+
+    Collected by ResearchTaskAgent and written to trace by LeadResearchAgent
+    (single-threaded, after all subagents complete).
+    """
+
+    event_type: str  # "tool_call" or "tool_result"
+    tool_name: str
+    input_summary: str
+    output_summary: str
+    status: str  # "success" or "failed"
+    error: ErrorInfo | None = None
+
+
+@dataclass
 class CandidateEvidenceBatch:
     """Result from a single ResearchTaskAgent execution.
 
@@ -47,3 +63,5 @@ class CandidateEvidenceBatch:
     status: SubagentStatus = SubagentStatus.SUCCESS
     candidates: list[Evidence] = field(default_factory=list)
     error: ErrorInfo | None = None
+    tool_events: list[ToolEvent] = field(default_factory=list)
+
