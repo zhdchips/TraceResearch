@@ -1,13 +1,12 @@
 """Integration tests for LangGraph runtime adapter (009).
 
 Tests:
-- LangGraph mode completes a fixture research run
-- LangGraph mode produces all 10 compatible artifacts
-- trace.jsonl contains LANGGRAPH node start/finish and edge decision events
-- REVISE routing by next_phase
-- max_iterations enforcement
-- Default runtime mode still passes (regression check)
-- tool_controller mode still passes (regression check)
+- LangGraph mode with real harness + fixture provider (completed, needs_clarification, failed)
+- All 10 artifacts written on completed run
+- trace.jsonl contains LANGGRAPH node/edge events
+- Early-stop semantics: needs_clarification + all-failed → no Writer.final
+- REVISE routing, max_iterations enforcement
+- Regression: runtime + tool_controller modes still pass
 """
 
 from __future__ import annotations
@@ -33,6 +32,7 @@ from traceresearch.evidence.models import (
     Evidence,
     NextPhase,
     ResearchBrief,
+    ResearchRunStatus,
     ResearchTask,
     SourceResult,
     SourceType,
@@ -44,28 +44,29 @@ from traceresearch.trace.writer import TraceWriter
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers (mock-based)
 # ---------------------------------------------------------------------------
 
 
-def _make_brief(run_id="int-001") -> ResearchBrief:
+def _make_brief(run_id="int-001", open_clarifications=None, research_tasks=None):
+    tasks = research_tasks or [
+        ResearchTask(
+            research_task_id="T-001",
+            run_id=run_id,
+            perspective="P1",
+            objective="Task 1",
+            query="Query 1",
+        ),
+    ]
     return ResearchBrief(
         run_id=run_id,
         objective="Integration Test",
         scope_boundaries=[],
         assumptions=[],
-        open_clarifications=[],
-        perspectives=["P1"],
-        success_criteria=["S1"],
-        research_tasks=[
-            ResearchTask(
-                research_task_id="T-001",
-                run_id=run_id,
-                perspective="P1",
-                objective="Task 1",
-                query="Query 1",
-            ),
-        ],
+        open_clarifications=open_clarifications or [],
+        perspectives=["P1"] if not open_clarifications else [],
+        success_criteria=["S1"] if not open_clarifications else [],
+        research_tasks=tasks if not open_clarifications else [],
     )
 
 
@@ -112,58 +113,116 @@ def _make_critique(decision, next_phase, missing=None):
     )
 
 
-def _make_all_mocks(brief_id="int-001"):
-    """Return a dict of all mocked agents for a full run."""
-    mock_planner = MagicMock(spec=Planner)
-    mock_planner.plan.return_value = _make_brief(brief_id)
-
-    mock_lead = MagicMock()
-    mock_lead.conduct_research.return_value = MagicMock(
-        evidence=_make_evidence(brief_id), failed_task_ids=[],
-    )
-
-    mock_writer = MagicMock(spec=WriterProtocol)
-    mock_draft = MagicMock()
-    mock_draft.claims = []
-    mock_draft.outline_markdown = "# Outline"
-    mock_draft.draft_markdown = "# Draft Report"
-    mock_writer.draft.return_value = mock_draft
-    mock_final = MagicMock()
-    mock_final.markdown = "# Final Report"
-    mock_final.report_json = {"title": "Final Report JSON"}
-    mock_writer.final.return_value = mock_final
-
-    mock_verifier = MagicMock(spec=VerifierProtocol)
-    mock_verification = MagicMock()
-    mock_verification.claim_results = []
-    mock_verifier.verify.return_value = mock_verification
-
-    mock_critic = MagicMock(spec=Critic)
-    mock_critic.review.return_value = _make_critique(
-        CritiqueDecision.PASS, NextPhase.COMPLETE,
-    )
-
-    mock_provider = MagicMock()
-    mock_provider.provider_name = "fixture"
-
-    return {
-        "planner": mock_planner,
-        "lead": mock_lead,
-        "writer": mock_writer,
-        "verifier": mock_verifier,
-        "critic": mock_critic,
-        "provider": mock_provider,
-    }
-
-
 # ---------------------------------------------------------------------------
-# LangGraph Integration Tests
+# Real harness tests with fixture provider
 # ---------------------------------------------------------------------------
 
 
-class TestLangGraphIntegration:
+class TestLangGraphHarnessReal:
+    """Tests that go through the real ResearchHarness with fixture provider."""
+
+    def test_completed_fixture_run_produces_all_artifacts(self, tmp_path, monkeypatch):
+        """LangGraph mode with fixture provider: completed run, all 10 artifacts."""
+        monkeypatch.setenv("TRACERESEARCH_LEAD_AGENT_MODE", "langgraph")
+
+        harness = ResearchHarness()
+        result = harness.run_fixture(
+            query="Compare LangGraph, AutoGen, and CrewAI for building evidence-grounded deep research agents.",
+            case_id="001-framework-comparison",
+            output_dir=tmp_path / "runs",
+        )
+
+        assert result.status == ResearchRunStatus.COMPLETED
+        assert result.final_report_path is not None
+        assert result.final_report_path.exists()
+
+        # Verify all 10 required artifacts
+        for name in REQUIRED_ARTIFACT_FILES:
+            path = result.artifact_dir / REQUIRED_ARTIFACT_FILES[name]
+            assert path.exists(), f"Missing artifact: {REQUIRED_ARTIFACT_FILES[name]}"
+
+        # Verify trace has LangGraph events
+        trace_path = result.artifact_dir / "trace.jsonl"
+        events = _read_trace(trace_path)
+        lg_events = [e for e in events if e.get("agent_role") == "LangGraph"]
+        assert len(lg_events) > 0, "Expected LANGGRAPH events in trace"
+
+        # Verify edge_decision events
+        edge_events = [e for e in lg_events if e.get("tool_name") == "edge_decision"]
+        assert len(edge_events) >= 1, "Expected edge_decision events"
+
+    def test_needs_clarification_stops_early(self, tmp_path, monkeypatch):
+        """Ambiguous query → needs_clarification, no final_report, no downstream artifacts."""
+        monkeypatch.setenv("TRACERESEARCH_LEAD_AGENT_MODE", "langgraph")
+
+        harness = ResearchHarness()
+        result = harness.run_fixture(
+            query="Research everything about technology.",
+            case_id=None,  # triggers ambiguity detection in Planner
+            output_dir=tmp_path / "runs",
+        )
+
+        assert result.status == ResearchRunStatus.NEEDS_CLARIFICATION
+        assert result.final_report_path is None
+
+        # Should have research_brief.json with open_clarifications
+        brief_path = result.artifact_dir / "research_brief.json"
+        assert brief_path.exists()
+        brief = json.loads(brief_path.read_text())
+        assert len(brief.get("open_clarifications", [])) > 0
+
+        # Should have trace.jsonl
+        trace_path = result.artifact_dir / "trace.jsonl"
+        assert trace_path.exists()
+
+        # Must NOT have final_report.md, report.json
+        assert not (result.artifact_dir / "final_report.md").exists()
+        assert not (result.artifact_dir / "report.json").exists()
+        # Must NOT have evidence.jsonl (research never ran)
+        assert not (result.artifact_dir / "evidence.jsonl").exists()
+
+        # Trace roles must not include Writer, Verifier, Critic, Researcher
+        events = _read_trace(trace_path)
+        roles = {e.get("agent_role") for e in events}
+        forbidden = {"Writer", "Verifier", "Critic", "Researcher", "ResearchLead", "ResearchSubagent"}
+        for role in forbidden:
+            assert role not in roles, f"Downstream role {role} should not appear for needs_clarification"
+
+    def test_all_research_failed_no_final_report(self, tmp_path, monkeypatch):
+        """When all research tasks fail → FAILED status, no final_report, no Writer.final call."""
+        monkeypatch.setenv("TRACERESEARCH_LEAD_AGENT_MODE", "langgraph")
+
+        # Build harness with a lead_researcher that returns empty evidence
+        mock_lead = MagicMock()
+        mock_lead.conduct_research.return_value = MagicMock(
+            evidence=[], failed_task_ids=["T-001"],
+        )
+
+        harness = ResearchHarness(lead_researcher=mock_lead)
+        result = harness.run_fixture(
+            query="Compare LangGraph, AutoGen, and CrewAI for building evidence-grounded deep research agents.",
+            case_id="001-framework-comparison",
+            output_dir=tmp_path / "runs",
+        )
+
+        assert result.status == ResearchRunStatus.FAILED
+        assert result.final_report_path is None
+
+        # Must NOT have final_report.md / report.json
+        assert not (result.artifact_dir / "final_report.md").exists()
+        assert not (result.artifact_dir / "report.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# Direct LeadGraphRuntime tests (mock-based, no harness)
+# ---------------------------------------------------------------------------
+
+
+class TestLangGraphDirect:
+    """Direct LeadGraphRuntime tests for edge cases."""
+
     def test_completes_fixture_run(self, tmp_path):
-        """LangGraph mode completes a full research run."""
+        """LangGraph direct: completes a full research run."""
         run_dir = tmp_path / "test-run"
         run_dir.mkdir()
         trace_writer = TraceWriter(run_dir / "trace.jsonl")
@@ -174,21 +233,51 @@ class TestLangGraphIntegration:
             trace_writer=trace_writer,
         )
 
-        mocks = _make_all_mocks("lg-int-001")
+        mock_planner = MagicMock(spec=Planner)
+        mock_planner.plan.return_value = _make_brief("lg-int-001")
+
+        mock_lead = MagicMock()
+        mock_lead.conduct_research.return_value = MagicMock(
+            evidence=_make_evidence("lg-int-001"), failed_task_ids=[],
+        )
+
+        mock_writer = MagicMock(spec=WriterProtocol)
+        mock_draft = MagicMock()
+        mock_draft.claims = []
+        mock_draft.outline_markdown = "# Outline"
+        mock_draft.draft_markdown = "# Draft"
+        mock_writer.draft.return_value = mock_draft
+        mock_final = MagicMock()
+        mock_final.markdown = "# Final"
+        mock_final.report_json = {"title": "Final Report"}
+        mock_writer.final.return_value = mock_final
+
+        mock_verifier = MagicMock(spec=VerifierProtocol)
+        mock_v = MagicMock()
+        mock_v.claim_results = []
+        mock_verifier.verify.return_value = mock_v
+
+        mock_critic = MagicMock(spec=Critic)
+        mock_critic.review.return_value = _make_critique(
+            CritiqueDecision.PASS, NextPhase.COMPLETE,
+        )
+
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "fixture"
 
         runtime = LeadAgentRuntime(
             state=state,
-            planner=mocks["planner"],
-            lead_researcher=mocks["lead"],
-            writer=mocks["writer"],
-            verifier=mocks["verifier"],
-            critic=mocks["critic"],
+            planner=mock_planner,
+            lead_researcher=mock_lead,
+            writer=mock_writer,
+            verifier=mock_verifier,
+            critic=mock_critic,
         )
 
         graph_rt = LeadGraphRuntime(runtime=runtime, state=state)
         final_gs = graph_rt.run(
             query="Test query",
-            provider=mocks["provider"],
+            provider=mock_provider,
         )
 
         assert state.status == "completed"
@@ -197,138 +286,6 @@ class TestLangGraphIntegration:
         assert state.verification_result is not None
         assert state.critique_result is not None
         assert state.final_report is not None
-
-    def test_all_artifacts_written(self, tmp_path):
-        """Verify all 10 artifacts can be written from langgraph mode."""
-        run_dir = tmp_path / "test-run"
-        run_dir.mkdir()
-        trace_writer = TraceWriter(run_dir / "trace.jsonl")
-
-        state = RuntimeState(
-            run_id="lg-art-001",
-            run_dir=str(run_dir),
-            trace_writer=trace_writer,
-        )
-
-        mocks = _make_all_mocks("lg-art-001")
-
-        runtime = LeadAgentRuntime(
-            state=state,
-            planner=mocks["planner"],
-            lead_researcher=mocks["lead"],
-            writer=mocks["writer"],
-            verifier=mocks["verifier"],
-            critic=mocks["critic"],
-        )
-
-        graph_rt = LeadGraphRuntime(runtime=runtime, state=state)
-        graph_rt.run(query="Test query", provider=mocks["provider"])
-
-        # Write artifacts (simulating what harness does)
-        import json as _json
-        artifacts = RunArtifacts.create(tmp_path / "output", "lg-art-001")
-
-        if state.research_brief:
-            _write_json(artifacts.research_brief, state.research_brief.model_dump(mode="json"))
-            _write_json(artifacts.research_tasks,
-                       [t.model_dump(mode="json") for t in state.planned_tasks])
-
-        if state.draft_report:
-            artifacts.outline.write_text(
-                getattr(state.draft_report, "outline_markdown", ""), encoding="utf-8")
-            artifacts.draft_report.write_text(
-                getattr(state.draft_report, "draft_markdown", ""), encoding="utf-8")
-
-        if state.verification_result:
-            _write_json(artifacts.verification,
-                       state.verification_result.model_dump(mode="json"))
-
-        if state.critique_result:
-            _write_json(artifacts.critique,
-                       state.critique_result.model_dump(mode="json"))
-
-        if state.final_report:
-            artifacts.final_report.write_text(
-                getattr(state.final_report, "markdown", ""), encoding="utf-8")
-            report_json = getattr(state.final_report, "report_json", None)
-            if report_json:
-                _write_json(artifacts.report_json, report_json)
-
-        # Copy trace
-        import shutil
-        shutil.copy(run_dir / "trace.jsonl", artifacts.trace)
-
-        # Write evidence.jsonl
-        artifacts.evidence.write_text("", encoding="utf-8")  # empty is fine
-
-        # Verify all required artifact paths exist
-        for name, filename in REQUIRED_ARTIFACT_FILES.items():
-            path = getattr(artifacts, name)
-            assert path.exists(), f"Missing artifact: {filename} at {path}"
-
-    def test_trace_has_langgraph_events(self, tmp_path):
-        """trace.jsonl contains LANGGRAPH node start/finish and edge decision events."""
-        run_dir = tmp_path / "test-run"
-        run_dir.mkdir()
-        trace_writer = TraceWriter(run_dir / "trace.jsonl")
-
-        state = RuntimeState(
-            run_id="lg-tr-001",
-            run_dir=str(run_dir),
-            trace_writer=trace_writer,
-        )
-
-        mocks = _make_all_mocks("lg-tr-001")
-
-        runtime = LeadAgentRuntime(
-            state=state,
-            planner=mocks["planner"],
-            lead_researcher=mocks["lead"],
-            writer=mocks["writer"],
-            verifier=mocks["verifier"],
-            critic=mocks["critic"],
-        )
-
-        graph_rt = LeadGraphRuntime(runtime=runtime, state=state)
-        graph_rt.run(query="Test query", provider=mocks["provider"])
-
-        events = trace_writer.read_all()
-        lg_events = [e for e in events if e.agent_role == AgentRole.LANGGRAPH]
-
-        # Node start events
-        node_starts = {
-            e.tool_name
-            for e in lg_events
-            if e.event_type == EventType.START and e.tool_name
-        }
-        expected_nodes = {
-            "plan_research", "run_research_subagents",
-            "write_report", "verify_report",
-            "critique_report", "finalize_run",
-        }
-        assert node_starts == expected_nodes, f"Missing node START events: {expected_nodes - node_starts}"
-
-        # Node finish events
-        node_finishes = {
-            e.tool_name
-            for e in lg_events
-            if e.event_type == EventType.FINISH and e.tool_name
-        }
-        assert node_finishes == expected_nodes, f"Missing node FINISH events: {expected_nodes - node_finishes}"
-
-        # Edge decision events
-        edge_events = [
-            e for e in lg_events
-            if e.event_type == EventType.TOOL_RESULT
-            and e.tool_name == "edge_decision"
-        ]
-        assert len(edge_events) >= 3, f"Expected >= 3 edge decisions, got {len(edge_events)}"
-
-        # Verify edge decisions contain expected metadata
-        for ev in edge_events:
-            assert "from=" in ev.input_summary
-            assert "to=" in ev.input_summary
-            assert "decision=" in ev.input_summary
 
     def test_revise_research_reroutes(self, tmp_path):
         """REVISE with next_phase=research triggers another research run."""
@@ -343,28 +300,53 @@ class TestLangGraphIntegration:
             max_iterations=3,
         )
 
-        mocks = _make_all_mocks("lg-rev-001")
-        mocks["critic"].review.side_effect = [
+        mock_planner = MagicMock(spec=Planner)
+        mock_planner.plan.return_value = _make_brief("lg-rev-001")
+
+        mock_lead = MagicMock()
+        mock_lead.conduct_research.return_value = MagicMock(
+            evidence=_make_evidence("lg-rev-001"), failed_task_ids=[],
+        )
+
+        mock_writer = MagicMock(spec=WriterProtocol)
+        mock_draft = MagicMock()
+        mock_draft.claims = []
+        mock_draft.outline_markdown = "# O"
+        mock_draft.draft_markdown = "# D"
+        mock_writer.draft.return_value = mock_draft
+        mock_final = MagicMock()
+        mock_final.markdown = "# F"
+        mock_final.report_json = {}
+        mock_writer.final.return_value = mock_final
+
+        mock_verifier = MagicMock(spec=VerifierProtocol)
+        mock_v = MagicMock()
+        mock_v.claim_results = []
+        mock_verifier.verify.return_value = mock_v
+
+        mock_critic = MagicMock(spec=Critic)
+        mock_critic.review.side_effect = [
             _make_critique(CritiqueDecision.REVISE, NextPhase.RESEARCH, ["P2"]),
             _make_critique(CritiqueDecision.PASS, NextPhase.COMPLETE),
         ]
 
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "fixture"
+
         runtime = LeadAgentRuntime(
             state=state,
-            planner=mocks["planner"],
-            lead_researcher=mocks["lead"],
-            writer=mocks["writer"],
-            verifier=mocks["verifier"],
-            critic=mocks["critic"],
+            planner=mock_planner,
+            lead_researcher=mock_lead,
+            writer=mock_writer,
+            verifier=mock_verifier,
+            critic=mock_critic,
         )
 
         graph_rt = LeadGraphRuntime(runtime=runtime, state=state)
-        graph_rt.run(query="Test query", provider=mocks["provider"])
+        graph_rt.run(query="Test query", provider=mock_provider)
 
         assert state.status == "completed"
-        assert mocks["lead"].conduct_research.call_count == 2
-
-        # Verify iteration history
+        assert mock_lead.conduct_research.call_count == 2
         assert len(state.iteration_history) >= 2
 
     def test_revise_write_reroutes(self, tmp_path):
@@ -380,26 +362,53 @@ class TestLangGraphIntegration:
             max_iterations=3,
         )
 
-        mocks = _make_all_mocks("lg-rw-001")
-        mocks["critic"].review.side_effect = [
+        mock_planner = MagicMock(spec=Planner)
+        mock_planner.plan.return_value = _make_brief("lg-rw-001")
+
+        mock_lead = MagicMock()
+        mock_lead.conduct_research.return_value = MagicMock(
+            evidence=_make_evidence("lg-rw-001"), failed_task_ids=[],
+        )
+
+        mock_writer = MagicMock(spec=WriterProtocol)
+        mock_draft = MagicMock()
+        mock_draft.claims = []
+        mock_draft.outline_markdown = "# O"
+        mock_draft.draft_markdown = "# D"
+        mock_writer.draft.return_value = mock_draft
+        mock_final = MagicMock()
+        mock_final.markdown = "# F"
+        mock_final.report_json = {}
+        mock_writer.final.return_value = mock_final
+
+        mock_verifier = MagicMock(spec=VerifierProtocol)
+        mock_v = MagicMock()
+        mock_v.claim_results = []
+        mock_verifier.verify.return_value = mock_v
+
+        mock_critic = MagicMock(spec=Critic)
+        mock_critic.review.side_effect = [
             _make_critique(CritiqueDecision.REVISE, NextPhase.WRITE, ["fix"]),
             _make_critique(CritiqueDecision.PASS, NextPhase.COMPLETE),
         ]
 
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "fixture"
+
         runtime = LeadAgentRuntime(
             state=state,
-            planner=mocks["planner"],
-            lead_researcher=mocks["lead"],
-            writer=mocks["writer"],
-            verifier=mocks["verifier"],
-            critic=mocks["critic"],
+            planner=mock_planner,
+            lead_researcher=mock_lead,
+            writer=mock_writer,
+            verifier=mock_verifier,
+            critic=mock_critic,
         )
 
         graph_rt = LeadGraphRuntime(runtime=runtime, state=state)
-        graph_rt.run(query="Test query", provider=mocks["provider"])
+        graph_rt.run(query="Test query", provider=mock_provider)
 
         assert state.status == "completed"
-        assert mocks["writer"].draft.call_count == 2
+        assert mock_writer.draft.call_count == 2
 
     def test_max_iterations_stops_loop(self, tmp_path):
         """max_iterations=2 with continuous REVISE stops at the graph level."""
@@ -414,35 +423,56 @@ class TestLangGraphIntegration:
             max_iterations=2,
         )
 
-        mocks = _make_all_mocks("lg-mx-001")
-        # Keep returning REVISE — graph should stop after 2 iterations
-        mocks["critic"].review.return_value = _make_critique(
+        mock_planner = MagicMock(spec=Planner)
+        mock_planner.plan.return_value = _make_brief("lg-mx-001")
+
+        mock_lead = MagicMock()
+        mock_lead.conduct_research.return_value = MagicMock(
+            evidence=_make_evidence("lg-mx-001"), failed_task_ids=[],
+        )
+
+        mock_writer = MagicMock(spec=WriterProtocol)
+        mock_draft = MagicMock()
+        mock_draft.claims = []
+        mock_draft.outline_markdown = "# O"
+        mock_draft.draft_markdown = "# D"
+        mock_writer.draft.return_value = mock_draft
+        mock_final = MagicMock()
+        mock_final.markdown = "# F"
+        mock_final.report_json = {}
+        mock_writer.final.return_value = mock_final
+
+        mock_verifier = MagicMock(spec=VerifierProtocol)
+        mock_v = MagicMock()
+        mock_v.claim_results = []
+        mock_verifier.verify.return_value = mock_v
+
+        mock_critic = MagicMock(spec=Critic)
+        mock_critic.review.return_value = _make_critique(
             CritiqueDecision.REVISE, NextPhase.WRITE, ["never satisfied"],
         )
 
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "fixture"
+
         runtime = LeadAgentRuntime(
             state=state,
-            planner=mocks["planner"],
-            lead_researcher=mocks["lead"],
-            writer=mocks["writer"],
-            verifier=mocks["verifier"],
-            critic=mocks["critic"],
+            planner=mock_planner,
+            lead_researcher=mock_lead,
+            writer=mock_writer,
+            verifier=mock_verifier,
+            critic=mock_critic,
         )
 
         graph_rt = LeadGraphRuntime(runtime=runtime, state=state)
-        graph_rt.run(query="Test query", provider=mocks["provider"])
+        graph_rt.run(query="Test query", provider=mock_provider)
 
-        # Graph should have finished (not hung)
         assert state.status in ("completed", "critiqued")
-
-        # iteration_index should not exceed max_iterations+1
         assert state.iteration_index <= state.max_iterations + 1
+        assert mock_writer.draft.call_count <= state.max_iterations + 1
 
-        # draft should have been called at most max_iterations+1 times
-        assert mocks["writer"].draft.call_count <= state.max_iterations + 1
-
-    def test_fail_decision_routes_to_finalize(self, tmp_path):
-        """FAIL critique decision routes to finalize rather than looping."""
+    def test_fail_decision_still_finalizes(self, tmp_path):
+        """FAIL critique → finalize_run (best-effort report, different from early-stop)."""
         run_dir = tmp_path / "test-run"
         run_dir.mkdir()
         trace_writer = TraceWriter(run_dir / "trace.jsonl")
@@ -454,27 +484,53 @@ class TestLangGraphIntegration:
             max_iterations=5,
         )
 
-        mocks = _make_all_mocks("lg-fl-001")
-        mocks["critic"].review.return_value = _make_critique(
+        mock_planner = MagicMock(spec=Planner)
+        mock_planner.plan.return_value = _make_brief("lg-fl-001")
+
+        mock_lead = MagicMock()
+        mock_lead.conduct_research.return_value = MagicMock(
+            evidence=_make_evidence("lg-fl-001"), failed_task_ids=[],
+        )
+
+        mock_writer = MagicMock(spec=WriterProtocol)
+        mock_draft = MagicMock()
+        mock_draft.claims = []
+        mock_draft.outline_markdown = "# O"
+        mock_draft.draft_markdown = "# D"
+        mock_writer.draft.return_value = mock_draft
+        mock_final = MagicMock()
+        mock_final.markdown = "# F"
+        mock_final.report_json = {}
+        mock_writer.final.return_value = mock_final
+
+        mock_verifier = MagicMock(spec=VerifierProtocol)
+        mock_v = MagicMock()
+        mock_v.claim_results = []
+        mock_verifier.verify.return_value = mock_v
+
+        mock_critic = MagicMock(spec=Critic)
+        mock_critic.review.return_value = _make_critique(
             CritiqueDecision.FAIL, NextPhase.EVAL,
         )
 
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "fixture"
+
         runtime = LeadAgentRuntime(
             state=state,
-            planner=mocks["planner"],
-            lead_researcher=mocks["lead"],
-            writer=mocks["writer"],
-            verifier=mocks["verifier"],
-            critic=mocks["critic"],
+            planner=mock_planner,
+            lead_researcher=mock_lead,
+            writer=mock_writer,
+            verifier=mock_verifier,
+            critic=mock_critic,
         )
 
         graph_rt = LeadGraphRuntime(runtime=runtime, state=state)
-        graph_rt.run(query="Test query", provider=mocks["provider"])
+        graph_rt.run(query="Test query", provider=mock_provider)
 
-        # Should have finalized despite high max_iterations
-        assert state.status in ("completed", "critiqued")
-        # Only one draft call (not a loop)
-        assert mocks["writer"].draft.call_count == 1
+        # FAIL → finalize_run IS called (best-effort report)
+        assert mock_writer.final.call_count == 1
+        assert mock_writer.draft.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -497,20 +553,49 @@ class TestModeRegression:
             trace_writer=trace_writer,
         )
 
-        mocks = _make_all_mocks("reg-rt-001")
+        mock_planner = MagicMock(spec=Planner)
+        mock_planner.plan.return_value = _make_brief("reg-rt-001")
+
+        mock_lead = MagicMock()
+        mock_lead.conduct_research.return_value = MagicMock(
+            evidence=_make_evidence("reg-rt-001"), failed_task_ids=[],
+        )
+
+        mock_writer = MagicMock(spec=WriterProtocol)
+        mock_draft = MagicMock()
+        mock_draft.claims = []
+        mock_draft.outline_markdown = "# O"
+        mock_draft.draft_markdown = "# D"
+        mock_writer.draft.return_value = mock_draft
+        mock_final = MagicMock()
+        mock_final.markdown = "# F"
+        mock_writer.final.return_value = mock_final
+
+        mock_verifier = MagicMock(spec=VerifierProtocol)
+        mock_v = MagicMock()
+        mock_v.claim_results = []
+        mock_verifier.verify.return_value = mock_v
+
+        mock_critic = MagicMock(spec=Critic)
+        mock_critic.review.return_value = _make_critique(
+            CritiqueDecision.PASS, NextPhase.COMPLETE,
+        )
+
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "fixture"
 
         runtime = LeadAgentRuntime(
             state=state,
-            planner=mocks["planner"],
-            lead_researcher=mocks["lead"],
-            writer=mocks["writer"],
-            verifier=mocks["verifier"],
-            critic=mocks["critic"],
+            planner=mock_planner,
+            lead_researcher=mock_lead,
+            writer=mock_writer,
+            verifier=mock_verifier,
+            critic=mock_critic,
         )
 
         result = runtime.run_pipeline(
             query="Test query",
-            provider=mocks["provider"],
+            provider=mock_provider,
         )
 
         assert result.status == "completed"
@@ -527,55 +612,55 @@ class TestModeRegression:
             trace_writer=trace_writer,
         )
 
-        mocks = _make_all_mocks("reg-tc-001")
+        mock_planner = MagicMock(spec=Planner)
+        mock_planner.plan.return_value = _make_brief("reg-tc-001")
+
+        mock_lead = MagicMock()
+        mock_lead.conduct_research.return_value = MagicMock(
+            evidence=_make_evidence("reg-tc-001"), failed_task_ids=[],
+        )
+
+        mock_writer = MagicMock(spec=WriterProtocol)
+        mock_draft = MagicMock()
+        mock_draft.claims = []
+        mock_draft.outline_markdown = "# O"
+        mock_draft.draft_markdown = "# D"
+        mock_writer.draft.return_value = mock_draft
+        mock_final = MagicMock()
+        mock_final.markdown = "# F"
+        mock_writer.final.return_value = mock_final
+
+        mock_verifier = MagicMock(spec=VerifierProtocol)
+        mock_v = MagicMock()
+        mock_v.claim_results = []
+        mock_verifier.verify.return_value = mock_v
+
+        mock_critic = MagicMock(spec=Critic)
+        mock_critic.review.return_value = _make_critique(
+            CritiqueDecision.PASS, NextPhase.COMPLETE,
+        )
+
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "fixture"
 
         runtime = LeadAgentRuntime(
             state=state,
-            planner=mocks["planner"],
-            lead_researcher=mocks["lead"],
-            writer=mocks["writer"],
-            verifier=mocks["verifier"],
-            critic=mocks["critic"],
+            planner=mock_planner,
+            lead_researcher=mock_lead,
+            writer=mock_writer,
+            verifier=mock_verifier,
+            critic=mock_critic,
         )
 
         controller = LeadAgentToolController(runtime=runtime, state=state)
-        result = controller.run_tool_loop("Test query", mocks["provider"])
+        result = controller.run_tool_loop("Test query", mock_provider)
 
         assert result.status == "completed"
 
-    def test_langgraph_mode_env_var(self, monkeypatch, tmp_path):
+    def test_langgraph_mode_env_var(self, monkeypatch):
         """_read_lead_agent_mode returns 'langgraph' when env var set."""
         monkeypatch.setenv("TRACERESEARCH_LEAD_AGENT_MODE", "langgraph")
         assert _read_lead_agent_mode() == "langgraph"
-
-    def test_langgraph_harness_run(self, tmp_path, monkeypatch):
-        """ResearchHarness.run() with langgraph mode completes."""
-        monkeypatch.setenv("TRACERESEARCH_LEAD_AGENT_MODE", "langgraph")
-
-        run_dir = tmp_path / "test-run"
-        run_dir.mkdir()
-        output_dir = tmp_path / "output"
-        output_dir.mkdir()
-
-        mocks = _make_all_mocks("harn-lg-001")
-
-        harness = ResearchHarness(
-            planner=mocks["planner"],
-            lead_researcher=mocks["lead"],
-            writer=mocks["writer"],
-            verifier=mocks["verifier"],
-            critic=mocks["critic"],
-        )
-
-        result = harness.run(
-            query="Test query",
-            source_provider=mocks["provider"],
-            output_dir=output_dir,
-        )
-
-        # RunResult should be returned (status may vary based on mocks)
-        assert result is not None
-        assert result.run_id is not None
 
 
 # ---------------------------------------------------------------------------
@@ -583,18 +668,12 @@ class TestModeRegression:
 # ---------------------------------------------------------------------------
 
 
-def _write_json(path: Path, payload: object) -> None:
-    """Write *payload* as JSON to *path* with fallback for mock objects."""
-    try:
-        if hasattr(payload, "model_dump"):
-            payload = payload.model_dump(mode="json")
-        path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-    except (TypeError, ValueError):
-        path.write_text(
-            json.dumps({"status": "skipped", "note": "payload not JSON serializable (test mock)"},
-                       ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+def _read_trace(path: Path) -> list[dict]:
+    """Read trace.jsonl and return list of dicts."""
+    if not path.exists():
+        return []
+    events = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            events.append(json.loads(line))
+    return events

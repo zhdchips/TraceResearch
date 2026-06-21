@@ -224,22 +224,28 @@ def _node_finalize_run(state: GraphState) -> GraphState:
 # ---------------------------------------------------------------------------
 
 
-def _route_after_plan(state: GraphState) -> Literal["run_research_subagents", "finalize_run"]:
-    """Route from plan_research: continue or stop for clarification."""
+def _route_after_plan(state: GraphState) -> Literal["run_research_subagents", "__end__"]:
+    """Route from plan_research: continue or early-stop for clarification.
+
+    needs_clarification / failed → END (no Writer.final, no downstream agents).
+    """
     status = state.get("status", "")
     if status in ("needs_clarification", "failed"):
-        _trace_edge(state, "plan_research", "finalize_run", "needs_clarification_or_failed")
-        return "finalize_run"
+        _trace_edge(state, "plan_research", "__end__", "needs_clarification_or_failed")
+        return END
     _trace_edge(state, "plan_research", "run_research_subagents", "planned")
     return "run_research_subagents"
 
 
-def _route_after_research(state: GraphState) -> Literal["write_report", "finalize_run"]:
-    """Route from run_research_subagents: write or stop if all failed."""
+def _route_after_research(state: GraphState) -> Literal["write_report", "__end__"]:
+    """Route from run_research_subagents: write or early-stop if all failed.
+
+    all-tasks-failed → END (no Writer.final, no downstream agents).
+    """
     status = state.get("status", "")
     if status == "failed":
-        _trace_edge(state, "run_research_subagents", "finalize_run", "all_tasks_failed")
-        return "finalize_run"
+        _trace_edge(state, "run_research_subagents", "__end__", "all_tasks_failed")
+        return END
     _trace_edge(state, "run_research_subagents", "write_report", "research_complete")
     return "write_report"
 
@@ -350,23 +356,23 @@ class LeadGraphRuntime:
         # START → plan
         graph.add_edge(START, "plan_research")
 
-        # plan → research (or finalize via conditional)
+        # plan → research (or END for early-stop)
         graph.add_conditional_edges(
             "plan_research",
             _route_after_plan,
             {
                 "run_research_subagents": "run_research_subagents",
-                "finalize_run": "finalize_run",
+                END: END,
             },
         )
 
-        # research → write (or finalize via conditional)
+        # research → write (or END for early-stop)
         graph.add_conditional_edges(
             "run_research_subagents",
             _route_after_research,
             {
                 "write_report": "write_report",
-                "finalize_run": "finalize_run",
+                END: END,
             },
         )
 

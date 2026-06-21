@@ -54,8 +54,9 @@
 
 ## Known Limitations
 
-1. No checkpointing/resumability (intentionally deferred).
-2. Graph routing is deterministic (no LLM-driven routing).
-3. No human-in-the-loop nodes.
+1. **In-process adapter only** — GraphState carries `_runtime_state` / `_runtime` as in-process object handles. Public routing fields are serializable, but full checkpoint/resume requires externalizing RuntimeState and artifact references (deferred).
+2. **No checkpointing/resumability** — no LangGraph `MemorySaver` or `SqliteSaver` persistence (intentionally deferred). Current `compile()` uses ephemeral in-memory state.
+3. **Graph routing is deterministic** — no LLM-driven routing; all edge decisions are rule-based (PASS/REVISE/FAIL + next_phase).
+4. **No human-in-the-loop** — no interrupt/approval nodes.
 4. Single graph instance per run (no multi-graph fan-out).
 5. No async LangGraph support (uses sync StateGraph API).

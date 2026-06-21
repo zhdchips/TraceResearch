@@ -1,5 +1,6 @@
 """Unit tests for LeadGraphRuntime (009) —
-graph construction, routing logic, max_iterations enforcement."""
+graph construction, routing logic, max_iterations enforcement,
+early-stop semantics (needs_clarification / all-failed → END)."""
 
 from __future__ import annotations
 
@@ -8,6 +9,8 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+
+from langgraph.graph import END
 
 from traceresearch.agents.critic import Critic
 from traceresearch.agents.graph_state import (
@@ -136,7 +139,7 @@ def _make_graph_state(run_id="test-001", **overrides):
 
 class TestGraphConstruction:
     def test_build_graph_has_all_nodes(self, tmp_path):
-        """Verify the compiled graph contains all 6 expected nodes."""
+        """Verify the compiled graph contains all expected nodes including END."""
         run_dir = tmp_path / "test-run"
         run_dir.mkdir()
 
@@ -194,30 +197,28 @@ class TestGraphConstruction:
 class TestRouteAfterPlan:
     def test_normal_routes_to_research(self):
         gs = _make_graph_state(status="planned")
-        result = _route_after_plan(gs)
-        assert result == "run_research_subagents"
+        assert _route_after_plan(gs) == "run_research_subagents"
 
-    def test_needs_clarification_routes_to_finalize(self):
+    def test_needs_clarification_routes_to_END(self):
+        """Early-stop: needs_clarification → END, never calls Writer.final."""
         gs = _make_graph_state(status="needs_clarification")
-        result = _route_after_plan(gs)
-        assert result == "finalize_run"
+        assert _route_after_plan(gs) == END
 
-    def test_failed_routes_to_finalize(self):
+    def test_failed_routes_to_END(self):
+        """Early-stop: plan failed → END."""
         gs = _make_graph_state(status="failed")
-        result = _route_after_plan(gs)
-        assert result == "finalize_run"
+        assert _route_after_plan(gs) == END
 
 
 class TestRouteAfterResearch:
     def test_researched_routes_to_write(self):
         gs = _make_graph_state(status="researched")
-        result = _route_after_research(gs)
-        assert result == "write_report"
+        assert _route_after_research(gs) == "write_report"
 
-    def test_failed_routes_to_finalize(self):
+    def test_failed_routes_to_END(self):
+        """Early-stop: all research failed → END, never calls Writer.final."""
         gs = _make_graph_state(status="failed")
-        result = _route_after_research(gs)
-        assert result == "finalize_run"
+        assert _route_after_research(gs) == END
 
 
 class TestRouteAfterCritique:
@@ -225,15 +226,14 @@ class TestRouteAfterCritique:
         gs = _make_graph_state(
             status="critiqued", critique_decision="pass",
         )
-        result = _route_after_critique(gs)
-        assert result == "finalize_run"
+        assert _route_after_critique(gs) == "finalize_run"
 
     def test_fail_routes_to_finalize(self):
+        """Critique FAIL → finalize (best-effort report with whatever we have)."""
         gs = _make_graph_state(
             status="critiqued", critique_decision="fail",
         )
-        result = _route_after_critique(gs)
-        assert result == "finalize_run"
+        assert _route_after_critique(gs) == "finalize_run"
 
     def test_revise_research_routes_to_run_subagents(self):
         gs = _make_graph_state(
@@ -243,8 +243,7 @@ class TestRouteAfterCritique:
             iteration_index=1,
             max_iterations=3,
         )
-        result = _route_after_critique(gs)
-        assert result == "run_research_subagents"
+        assert _route_after_critique(gs) == "run_research_subagents"
 
     def test_revise_write_routes_to_write(self):
         gs = _make_graph_state(
@@ -254,8 +253,7 @@ class TestRouteAfterCritique:
             iteration_index=1,
             max_iterations=3,
         )
-        result = _route_after_critique(gs)
-        assert result == "write_report"
+        assert _route_after_critique(gs) == "write_report"
 
     def test_revise_verify_routes_to_verify(self):
         gs = _make_graph_state(
@@ -265,25 +263,22 @@ class TestRouteAfterCritique:
             iteration_index=1,
             max_iterations=3,
         )
-        result = _route_after_critique(gs)
-        assert result == "verify_report"
+        assert _route_after_critique(gs) == "verify_report"
 
     def test_revise_default_unknown_phase_routes_to_write(self):
         """Unknown next_phase falls back to write_report."""
         gs = _make_graph_state(
             status="critiqued",
             critique_decision="revise",
-            next_phase="eval",  # not a valid REVISE target
+            next_phase="eval",
             iteration_index=1,
             max_iterations=3,
         )
-        result = _route_after_critique(gs)
-        assert result == "write_report"
+        assert _route_after_critique(gs) == "write_report"
 
 
 class TestMaxIterations:
     def test_max_iterations_reached_routes_to_finalize(self):
-        """When iteration_index >= max_iterations, REVISE routes to finalize."""
         gs = _make_graph_state(
             status="critiqued",
             critique_decision="revise",
@@ -291,11 +286,9 @@ class TestMaxIterations:
             iteration_index=3,
             max_iterations=3,
         )
-        result = _route_after_critique(gs)
-        assert result == "finalize_run"
+        assert _route_after_critique(gs) == "finalize_run"
 
     def test_one_more_iteration_allowed(self):
-        """iteration_index < max_iterations allows another cycle."""
         gs = _make_graph_state(
             status="critiqued",
             critique_decision="revise",
@@ -303,11 +296,9 @@ class TestMaxIterations:
             iteration_index=2,
             max_iterations=3,
         )
-        result = _route_after_critique(gs)
-        assert result == "run_research_subagents"
+        assert _route_after_critique(gs) == "run_research_subagents"
 
     def test_single_iteration_revise_stops(self):
-        """With max_iterations=1, even the first REVISE stops."""
         gs = _make_graph_state(
             status="critiqued",
             critique_decision="revise",
@@ -315,11 +306,9 @@ class TestMaxIterations:
             iteration_index=1,
             max_iterations=1,
         )
-        result = _route_after_critique(gs)
-        assert result == "finalize_run"
+        assert _route_after_critique(gs) == "finalize_run"
 
     def test_iteration_zero_revise_allowed(self):
-        """iteration_index=0 means first critique, still room to revise."""
         gs = _make_graph_state(
             status="critiqued",
             critique_decision="revise",
@@ -327,12 +316,11 @@ class TestMaxIterations:
             iteration_index=0,
             max_iterations=2,
         )
-        result = _route_after_critique(gs)
-        assert result == "write_report"
+        assert _route_after_critique(gs) == "write_report"
 
 
 # ---------------------------------------------------------------------------
-# Full graph run with mocks
+# Full graph run with mocks (node execution, not harness)
 # ---------------------------------------------------------------------------
 
 
@@ -349,7 +337,6 @@ class TestRunGraphWithMocks:
             trace_writer=trace_writer,
         )
 
-        # Mock agents
         mock_planner = MagicMock(spec=Planner)
         mock_planner.plan.return_value = _make_brief("full-001")
 
@@ -400,8 +387,110 @@ class TestRunGraphWithMocks:
         assert state.status == "completed"
         assert final_gs["status"] == "completed"
 
+    def test_needs_clarification_stops_at_END(self, tmp_path):
+        """plan_research returns needs_clarification → graph ends at END.
+        Writer/Verifier/Critic/Researcher must NOT be invoked."""
+        run_dir = tmp_path / "test-run"
+        run_dir.mkdir()
+        trace_writer = TraceWriter(run_dir / "trace.jsonl")
+
+        state = RuntimeState(
+            run_id="nc-001",
+            run_dir=str(run_dir),
+            trace_writer=trace_writer,
+        )
+
+        mock_planner = MagicMock(spec=Planner)
+        # Return a brief with open_clarifications — triggers early-stop
+        brief = _make_brief("nc-001")
+        brief.open_clarifications = ["What technology area?"]
+        mock_planner.plan.return_value = brief
+
+        mock_lead = MagicMock()
+        mock_writer = MagicMock(spec=WriterProtocol)
+        mock_verifier = MagicMock(spec=VerifierProtocol)
+        mock_critic = MagicMock(spec=Critic)
+
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "fixture"
+
+        runtime = LeadAgentRuntime(
+            state=state,
+            planner=mock_planner,
+            lead_researcher=mock_lead,
+            writer=mock_writer,
+            verifier=mock_verifier,
+            critic=mock_critic,
+        )
+
+        graph_rt = LeadGraphRuntime(runtime=runtime, state=state)
+        final_gs = graph_rt.run(query="Test", provider=mock_provider)
+
+        assert state.status == "needs_clarification"
+        # Writer.final must NOT be called
+        mock_writer.final.assert_not_called()
+        # Writer.draft must NOT be called
+        mock_writer.draft.assert_not_called()
+        # Verifier must NOT be called
+        mock_verifier.verify.assert_not_called()
+        # Critic must NOT be called
+        mock_critic.review.assert_not_called()
+        # Research must NOT be called
+        mock_lead.conduct_research.assert_not_called()
+
+    def test_all_research_failed_stops_at_END(self, tmp_path):
+        """run_research_subagents fails → graph ends at END.
+        Writer.final must NOT be called."""
+        run_dir = tmp_path / "test-run"
+        run_dir.mkdir()
+        trace_writer = TraceWriter(run_dir / "trace.jsonl")
+
+        state = RuntimeState(
+            run_id="arf-001",
+            run_dir=str(run_dir),
+            trace_writer=trace_writer,
+        )
+
+        mock_planner = MagicMock(spec=Planner)
+        mock_planner.plan.return_value = _make_brief("arf-001")
+
+        # lead returns empty evidence with non-empty failed_task_ids
+        mock_lead = MagicMock()
+        mock_lead.conduct_research.return_value = MagicMock(
+            evidence=[], failed_task_ids=["T-001"],
+        )
+
+        mock_writer = MagicMock(spec=WriterProtocol)
+        mock_verifier = MagicMock(spec=VerifierProtocol)
+        mock_critic = MagicMock(spec=Critic)
+
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "fixture"
+
+        runtime = LeadAgentRuntime(
+            state=state,
+            planner=mock_planner,
+            lead_researcher=mock_lead,
+            writer=mock_writer,
+            verifier=mock_verifier,
+            critic=mock_critic,
+        )
+
+        graph_rt = LeadGraphRuntime(runtime=runtime, state=state)
+        final_gs = graph_rt.run(query="Test", provider=mock_provider)
+
+        assert state.status == "failed"
+        # Writer.final must NOT be called
+        mock_writer.final.assert_not_called()
+        # Writer.draft must NOT be called
+        mock_writer.draft.assert_not_called()
+        # Verifier must NOT be called
+        mock_verifier.verify.assert_not_called()
+        # Critic must NOT be called
+        mock_critic.review.assert_not_called()
+
     def test_langgraph_trace_events_in_trace(self, tmp_path):
-        """Verify that LANGGRAPH events appear in the trace."""
+        """Verify that LANGGRAPH START/FINISH + edge_decision events appear."""
         run_dir = tmp_path / "test-run"
         run_dir.mkdir()
         trace_writer = TraceWriter(run_dir / "trace.jsonl")
@@ -463,14 +552,20 @@ class TestRunGraphWithMocks:
         ]
         assert len(langgraph_events) > 0, "Expected at least one LANGGRAPH event"
 
-        # Should have START and FINISH events for each node
         lg_start = [e for e in langgraph_events if e.event_type == EventType.START]
         lg_finish = [e for e in langgraph_events if e.event_type == EventType.FINISH]
         lg_edge = [e for e in langgraph_events if e.event_type == EventType.TOOL_RESULT]
 
-        assert len(lg_start) >= 6  # 6 nodes
+        assert len(lg_start) >= 6
         assert len(lg_finish) >= 6
-        assert len(lg_edge) >= 3  # at least plan→research, research→write, critique→final
+        assert len(lg_edge) >= 3
+
+        # Verify edge decisions contain expected metadata
+        for ev in lg_edge:
+            assert ev.tool_name == "edge_decision"
+            assert "from=" in ev.input_summary
+            assert "to=" in ev.input_summary
+            assert "decision=" in ev.input_summary
 
     def test_max_iterations_enforced_in_graph(self, tmp_path):
         """With max_iterations=1 and REVISE, graph still finishes."""
@@ -510,10 +605,8 @@ class TestRunGraphWithMocks:
         mock_verifier.verify.return_value = mock_v
 
         mock_critic = MagicMock(spec=Critic)
-        # REVISE — should trigger max_iterations check
         mock_critic.review.return_value = _make_critique(
-            CritiqueDecision.REVISE, NextPhase.RESEARCH,
-            missing=["P2"],
+            CritiqueDecision.REVISE, NextPhase.RESEARCH, ["P2"],
         )
 
         mock_provider = MagicMock()
@@ -529,11 +622,9 @@ class TestRunGraphWithMocks:
         )
 
         graph_rt = LeadGraphRuntime(runtime=runtime, state=state)
-        final_gs = graph_rt.run(query="Test", provider=mock_provider)
+        graph_rt.run(query="Test", provider=mock_provider)
 
-        # Should have completed (via finalize_run) rather than looping forever
-        assert state.status in ("completed", "critiqued")
-        # With max_iterations=1, research should NOT have been called twice
+        # With max_iterations=1, research should only be called once
         assert mock_lead.conduct_research.call_count == 1
 
     def test_revise_to_research_reruns_subagents(self, tmp_path):
@@ -574,7 +665,6 @@ class TestRunGraphWithMocks:
         mock_verifier.verify.return_value = mock_v
 
         mock_critic = MagicMock(spec=Critic)
-        # First: REVISE research, Second: PASS
         mock_critic.review.side_effect = [
             _make_critique(CritiqueDecision.REVISE, NextPhase.RESEARCH, ["missing"]),
             _make_critique(CritiqueDecision.PASS, NextPhase.COMPLETE),
@@ -593,8 +683,65 @@ class TestRunGraphWithMocks:
         )
 
         graph_rt = LeadGraphRuntime(runtime=runtime, state=state)
-        final_gs = graph_rt.run(query="Test", provider=mock_provider)
+        graph_rt.run(query="Test", provider=mock_provider)
 
         assert state.status == "completed"
-        # Research should have been called twice: initial + REVISE
         assert mock_lead.conduct_research.call_count == 2
+
+    def test_needs_clarification_trace_has_no_downstream_roles(self, tmp_path):
+        """When needs_clarification stops at END, trace has no Writer/Verifier/Critic events."""
+        run_dir = tmp_path / "test-run"
+        run_dir.mkdir()
+        trace_writer = TraceWriter(run_dir / "trace.jsonl")
+
+        state = RuntimeState(
+            run_id="nc-trace-001",
+            run_dir=str(run_dir),
+            trace_writer=trace_writer,
+        )
+
+        mock_planner = MagicMock(spec=Planner)
+        brief = _make_brief("nc-trace-001")
+        brief.open_clarifications = ["Ambiguous"]
+        mock_planner.plan.return_value = brief
+
+        mock_lead = MagicMock()
+        mock_writer = MagicMock(spec=WriterProtocol)
+        mock_verifier = MagicMock(spec=VerifierProtocol)
+        mock_critic = MagicMock(spec=Critic)
+
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "fixture"
+
+        runtime = LeadAgentRuntime(
+            state=state,
+            planner=mock_planner,
+            lead_researcher=mock_lead,
+            writer=mock_writer,
+            verifier=mock_verifier,
+            critic=mock_critic,
+        )
+
+        graph_rt = LeadGraphRuntime(runtime=runtime, state=state)
+        graph_rt.run(query="Test", provider=mock_provider)
+
+        events = trace_writer.read_all()
+        roles = {e.agent_role for e in events}
+
+        # Must NOT contain downstream agent roles
+        forbidden = {
+            AgentRole.WRITER, AgentRole.VERIFIER, AgentRole.CRITIC,
+            AgentRole.RESEARCHER, AgentRole.RESEARCH_LEAD,
+            AgentRole.RESEARCH_SUBAGENT,
+        }
+        for role in forbidden:
+            assert role not in roles, f"Agent role {role.value} should not appear for early-stop"
+
+        # Must have LANGGRAPH edge decision for early-stop
+        edge_events = [
+            e for e in events
+            if e.agent_role == AgentRole.LANGGRAPH
+            and e.tool_name == "edge_decision"
+        ]
+        assert any("needs_clarification" in e.input_summary for e in edge_events), \
+            "Expected edge decision for needs_clarification"

@@ -8,7 +8,12 @@ Design constraints (009):
 - GraphState MUST be a TypedDict (LangGraph StateGraph requirement).
 - RuntimeState remains the source of truth for execution data.
 - GraphState syncs from/to RuntimeState at node boundaries.
-- GraphState is fully serializable (no object references).
+- Public routing fields (run_id, run_dir, status, next_phase, etc.) are
+  serializable.  The fields ``_runtime_state`` and ``_runtime`` are
+  internal in-process handles (not serializable).
+- This is an in-process LangGraph adapter.  Full checkpoint/resume
+  would require externalizing RuntimeState and artifact references;
+  that is a known limitation deferred to a future iteration.
 """
 
 from __future__ import annotations

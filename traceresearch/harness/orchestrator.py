@@ -565,7 +565,12 @@ class ResearchHarness:
         trace: _TraceRecorder,
         state: RuntimeState,
     ) -> RunResult:
-        """Common run finalization: trace + RunResult construction."""
+        """Common run finalization: trace + RunResult construction.
+
+        Only validates completed-run trace coverage for COMPLETED runs.
+        Early-stop runs (needs_clarification, failed) skip coverage check
+        since downstream agents (Writer, Verifier, Critic) never ran.
+        """
         # Determine status
         if state.status == "needs_clarification":
             run_status = ResearchRunStatus.NEEDS_CLARIFICATION
@@ -574,6 +579,12 @@ class ResearchHarness:
         else:
             run_status = ResearchRunStatus.COMPLETED
 
+        final_report_path = (
+            str(artifacts.final_report)
+            if run_status == ResearchRunStatus.COMPLETED and artifacts.final_report.exists()
+            else None
+        )
+
         run = ResearchRun(
             run_id=run_id,
             input_query=query,
@@ -581,20 +592,23 @@ class ResearchHarness:
             created_at=datetime.now(timezone.utc),
             completed_at=datetime.now(timezone.utc),
             artifact_dir=str(artifacts.run_dir),
-            final_report_path=str(artifacts.final_report),
+            final_report_path=final_report_path,
         )
         trace.record(
             AgentRole.HARNESS,
             EventType.FINISH,
-            "completed run",
+            "completed run" if run_status == ResearchRunStatus.COMPLETED else "run finished",
             f"status={run.status.value}",
         )
-        trace.writer.validate_completed_run_coverage()
+        if run_status == ResearchRunStatus.COMPLETED:
+            trace.writer.validate_completed_run_coverage()
         return RunResult(
             run_id=run.run_id,
             status=run.status,
             artifact_dir=artifacts.run_dir,
-            final_report_path=artifacts.final_report,
+            final_report_path=(
+                Path(final_report_path) if final_report_path else None
+            ),
         )
 
 
@@ -674,20 +688,12 @@ def _trace_error(error: SourceDiscoveryError) -> ErrorInfo:
 def _write_json(path: Path, payload: object) -> None:
     """Write *payload* as JSON to *path*.
 
-    If *payload* is a Pydantic model, call ``model_dump(mode="json")`` first.
-    Falls back to ``str(payload)`` for non-serializable objects (e.g. MagicMock in tests).
+    If *payload* is a Pydantic model, calls ``model_dump(mode="json")`` first.
+    Raises TypeError on non-serializable objects — callers must pass valid data.
     """
-    try:
-        if hasattr(payload, "model_dump"):
-            payload = payload.model_dump(mode="json")
-        path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-    except (TypeError, ValueError):
-        # Fallback for test mocks / non-serializable objects
-        path.write_text(
-            json.dumps({"status": "skipped", "note": "payload not JSON serializable (test mock)"},
-                       ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+    if hasattr(payload, "model_dump"):
+        payload = payload.model_dump(mode="json")
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )

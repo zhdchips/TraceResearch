@@ -155,6 +155,7 @@ ContextBudget(
 4. **Subagent 隔离** — 每个 subagent 独立调用 provider，失败的 subagent 不影响其他。
 
 5. **LangGraph 不做并发** — Graph 节点是逐次执行的（单线程），不引入新的并发复杂度。
+6. **In-process adapter** — 当前 LangGraph 是 in-process adapter：GraphState 的 `_runtime_state` / `_runtime` 是进程内对象引用（不可序列化）。RuntimeState 保持执行态，GraphState 只做轻量 routing snapshot。生产级 checkpoint/resume 需要将 RuntimeState 和 artifact 引用外部化，已列入 known limitation，后续迭代再做。
 
 ### 为什么不用锁保护 RuntimeState？
 因为不需要。RuntimeState 的写操作都发生在 Lead Agent 主线程中（单线程），subagent 只读（且只读 task 定义，不读 RuntimeState）。这是 **ownership boundary** 设计最核心的优势——消除了锁的需求。
